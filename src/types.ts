@@ -16,6 +16,7 @@ export interface PhraseNode {
   end: number;
   depth?: number;
   x?: number;
+  triangleWidth?: number; // set by layout() when this renders as a triangle
 }
 
 export type TreeNode = LeafNode | PhraseNode;

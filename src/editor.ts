@@ -5,6 +5,7 @@ import {
   findEmptySlots,
   findMatchSet,
   isLeaf,
+  isTriangleNode,
   parseTree,
   scanBrackets,
   tokenize,
@@ -16,6 +17,18 @@ import { escapeHtml, lineOf } from "./utils";
 const UNIT = "    "; // 4 spaces per nesting level
 const DRAFT_KEY = "syntax-tree-creator-draft";
 const FOLDS_KEY = "syntax-tree-creator-folds";
+const STYLE_KEY = "syntax-tree-creator-style";
+const THEME_KEY = "syntax-tree-creator-theme";
+const REF_KEY = "syntax-tree-creator-reference";
+
+type TreeStyle = "simple" | "fancy";
+type ThemeChoice = "light" | "dark";
+
+// Typed text gets checked against this as you go; a matching trigger right
+// before the cursor is replaced with its symbol.
+const SHORTCUTS: Record<string, string> = {
+  "\\phi": "Φ",
+};
 
 // Disabled for now; showAutocomplete/chooseAutocomplete etc. stay in place.
 const AUTOCOMPLETE_ENABLED = false;
@@ -49,6 +62,7 @@ const LABELS: LabelOption[] = [
 
 const SAMPLE =
   "[S\n    [NP [Det the] [N dog]]\n    [VP\n        [V chased]\n        [NP [Det the] [N cat]]\n    ]\n]";
+const SAMPLE_SENTENCE = "The dog chased the cat.";
 
 interface TreeSpan {
   start: number;
@@ -65,6 +79,9 @@ export class TreeEditor {
   private treeArea: HTMLElement;
   private treeBadge: HTMLElement;
   private acEl: HTMLElement;
+  private styleToggleEl: HTMLElement;
+  private themeToggleEl: HTMLElement;
+  private refInput: HTMLInputElement;
 
   private acOpen = false;
   private acItems: LabelOption[] = [];
@@ -74,6 +91,8 @@ export class TreeEditor {
   private treeSpans: TreeSpan[] = [];
   private folds: FoldRecord[] = [];
   private prevValue = "";
+  private treeStyle: TreeStyle = "simple";
+  private theme: ThemeChoice = "light";
 
   constructor(root: HTMLElement) {
     this.ta = root.querySelector<HTMLTextAreaElement>("#editor")!;
@@ -84,6 +103,9 @@ export class TreeEditor {
     this.treeArea = root.querySelector<HTMLElement>("#treeArea")!;
     this.treeBadge = root.querySelector<HTMLElement>("#treeBadge")!;
     this.acEl = root.querySelector<HTMLElement>("#autocomplete")!;
+    this.styleToggleEl = root.querySelector<HTMLElement>("#styleToggle")!;
+    this.themeToggleEl = root.querySelector<HTMLElement>("#themeToggle")!;
+    this.refInput = root.querySelector<HTMLInputElement>("#refSentence")!;
 
     this.bindEvents();
     this.renderLegend(root);
@@ -105,16 +127,89 @@ export class TreeEditor {
     } catch {
       /* ignore malformed storage */
     }
+    try {
+      const savedStyle = localStorage.getItem(STYLE_KEY);
+      if (savedStyle === "simple" || savedStyle === "fancy") this.treeStyle = savedStyle;
+    } catch {
+      /* private browsing / storage disabled */
+    }
+    try {
+      const savedTheme = localStorage.getItem(THEME_KEY);
+      if (savedTheme === "light" || savedTheme === "dark") this.theme = savedTheme;
+    } catch {
+      /* private browsing / storage disabled */
+    }
+    try {
+      this.refInput.value = localStorage.getItem(REF_KEY) || "";
+    } catch {
+      /* private browsing / storage disabled */
+    }
 
     this.ta.value = saved || "";
     this.prevValue = this.ta.value;
+    this.renderStyleToggle();
+    this.applyTheme();
     this.update();
     this.ta.setSelectionRange(this.ta.value.length, this.ta.value.length);
 
     root.querySelector<HTMLButtonElement>("#resetBtn")!.addEventListener("click", () => {
       this.folds = [];
       this.setValue(SAMPLE, SAMPLE.length);
+      this.refInput.value = SAMPLE_SENTENCE;
+      try {
+        localStorage.setItem(REF_KEY, SAMPLE_SENTENCE);
+      } catch {
+        /* private browsing / storage disabled */
+      }
       this.ta.focus();
+    });
+
+    this.refInput.addEventListener("input", () => {
+      try {
+        localStorage.setItem(REF_KEY, this.refInput.value);
+      } catch {
+        /* private browsing / storage disabled */
+      }
+    });
+
+    this.styleToggleEl.addEventListener("click", (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(".style-btn");
+      const style = btn?.getAttribute("data-style");
+      if (style !== "simple" && style !== "fancy") return;
+      this.treeStyle = style;
+      this.renderStyleToggle();
+      try {
+        localStorage.setItem(STYLE_KEY, style);
+      } catch {
+        /* private browsing / storage disabled */
+      }
+      this.update();
+    });
+
+    this.themeToggleEl.addEventListener("click", (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(".style-btn");
+      const choice = btn?.getAttribute("data-theme-choice");
+      if (choice !== "light" && choice !== "dark") return;
+      this.theme = choice;
+      this.applyTheme();
+      try {
+        localStorage.setItem(THEME_KEY, choice);
+      } catch {
+        /* private browsing / storage disabled */
+      }
+    });
+  }
+
+  private renderStyleToggle(): void {
+    this.styleToggleEl.querySelectorAll<HTMLButtonElement>(".style-btn").forEach((btn) => {
+      btn.classList.toggle("active", btn.getAttribute("data-style") === this.treeStyle);
+    });
+  }
+
+  private applyTheme(): void {
+    document.documentElement.setAttribute("data-theme", this.theme);
+    this.themeToggleEl.querySelectorAll<HTMLButtonElement>(".style-btn").forEach((btn) => {
+      btn.classList.toggle("active", btn.getAttribute("data-theme-choice") === this.theme);
     });
   }
 
@@ -126,7 +221,24 @@ export class TreeEditor {
 
   // ---------- core update loop ----------
 
+  // Replaces a trigger ending right at the cursor (e.g. "\phi") with its symbol.
+  private expandShortcuts(): void {
+    if (this.ta.selectionStart !== this.ta.selectionEnd) return;
+    const pos = this.ta.selectionStart;
+    const value = this.ta.value;
+    for (const trigger in SHORTCUTS) {
+      if (pos >= trigger.length && value.slice(pos - trigger.length, pos) === trigger) {
+        const replacement = SHORTCUTS[trigger];
+        const newPos = pos - trigger.length + replacement.length;
+        this.ta.value = value.slice(0, pos - trigger.length) + replacement + value.slice(pos);
+        this.ta.setSelectionRange(newPos, newPos);
+        return;
+      }
+    }
+  }
+
   private update(): void {
+    this.expandShortcuts();
     this.folds = remapFolds(this.prevValue, this.ta.value, this.folds);
     const text = this.ta.value;
     const scan = scanBrackets(text);
@@ -291,6 +403,7 @@ export class TreeEditor {
     }
     const nodes: DrawNode[] = [];
     const lines: { x1: number; y1: number; x2: number; y2: number; depth: number }[] = [];
+    const triangles: { x: number; apexDepth: number; baseDepth: number; halfWidth: number; depth: number }[] = [];
     let maxDepth = 0;
     let maxX = 0;
 
@@ -299,7 +412,8 @@ export class TreeEditor {
       const x = node.x ?? 0;
       maxDepth = Math.max(maxDepth, depth);
       maxX = Math.max(maxX, x);
-      const leaf = isLeaf(node);
+      const triangle = node.kind === "phrase" && isTriangleNode(node);
+      const leaf = isLeaf(node) && !triangle;
       if (parent) lines.push({ x1: parent.x ?? 0, y1: parent.depth ?? 0, x2: x, y2: depth, depth });
       const id = "n" + this.treeSpans.length;
       const raw = mapNodeToRaw(node, map);
@@ -314,6 +428,21 @@ export class TreeEditor {
         end: raw.end,
         id,
       });
+
+      if (triangle && node.kind === "phrase") {
+        const baseDepth = depth + 1;
+        maxDepth = Math.max(maxDepth, baseDepth);
+        const halfWidth = (node.triangleWidth ?? 86) / 2;
+        maxX = Math.max(maxX, x + halfWidth); // the triangle's own center isn't its widest point
+        triangles.push({ x, apexDepth: depth, baseDepth, halfWidth, depth: baseDepth });
+        const first = node.children[0];
+        const last = node.children[node.children.length - 1];
+        const rawSpan = mapNodeToRaw({ ...first, end: last.end }, map);
+        const tid = "n" + this.treeSpans.length;
+        this.treeSpans.push({ start: rawSpan.start, end: rawSpan.end, id: tid });
+        nodes.push({ x, depth: baseDepth, leaf: true, label: "", text: collectWords(node).join(" "), start: rawSpan.start, end: rawSpan.end, id: tid });
+        return;
+      }
       if (!leaf && node.kind === "phrase") for (const c of node.children) walk(c, node);
     };
     walk(root, null);
@@ -322,16 +451,31 @@ export class TreeEditor {
     const LEVEL_H = 70;
     const w = maxX + PAD * 2;
     const h = (maxDepth + 1) * LEVEL_H + PAD * 1.4;
+    const simple = this.treeStyle === "simple";
     let svg = `<svg class="tree-svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">`;
     for (const l of lines) {
       const x1 = l.x1 + PAD;
       const y1 = l.y1 * LEVEL_H + PAD + 10;
       const x2 = l.x2 + PAD;
       const y2 = l.y2 * LEVEL_H + PAD - 12;
-      svg += `<path d="M ${x1} ${y1} C ${x1} ${y1 + 28}, ${x2} ${y2 - 22}, ${x2} ${y2}" fill="none" stroke="var(--depth-${l.depth % 5})" stroke-width="1.6" opacity=".75"/>`;
+      if (simple) {
+        svg += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="var(--ink)" stroke-width="1"/>`;
+      } else {
+        svg += `<path d="M ${x1} ${y1} C ${x1} ${y1 + 28}, ${x2} ${y2 - 22}, ${x2} ${y2}" fill="none" stroke="var(--depth-${l.depth % 5})" stroke-width="1.6" opacity=".75"/>`;
+      }
+    }
+    for (const t of triangles) {
+      const apexX = t.x + PAD;
+      const apexY = t.apexDepth * LEVEL_H + PAD + 10;
+      const baseY = t.baseDepth * LEVEL_H + PAD - 12;
+      const baseX1 = t.x + PAD - t.halfWidth;
+      const baseX2 = t.x + PAD + t.halfWidth;
+      const stroke = simple ? "var(--ink)" : `var(--depth-${t.depth % 5})`;
+      svg += `<polygon points="${apexX},${apexY} ${baseX1},${baseY} ${baseX2},${baseY}" fill="none" stroke="${stroke}" stroke-width="${simple ? 1 : 1.6}"${simple ? "" : ' opacity=".75"'}/>`;
     }
     for (const n of nodes) {
-      const cls = (n.leaf ? "leaf" : "label") + " d" + (n.depth % 5);
+      const colorCls = simple ? (n.leaf ? "simple-leaf" : "simple-node") : "d" + (n.depth % 5);
+      const cls = (n.leaf ? "leaf" : "label") + " " + colorCls;
       const label = n.leaf ? n.text : n.label || "∅";
       svg += `<text id="${n.id}" class="tree-node ${cls}" data-start="${n.start}" data-end="${n.end}" x="${n.x + PAD}" y="${n.depth * LEVEL_H + PAD}" text-anchor="middle">${escapeHtml(label)}</text>`;
     }

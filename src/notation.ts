@@ -58,6 +58,12 @@ export function isLeaf(node: TreeNode): boolean {
   return node.kind === "leaf" || node.children.length === 0;
 }
 
+// A phrase whose content is bare words with no sub-brackets, e.g. "[VP chased the cat]" —
+// drawn as a triangle over the full string rather than three separate branches.
+export function isTriangleNode(node: TreeNode): boolean {
+  return node.kind === "phrase" && node.children.length >= 2 && node.children.every((c) => c.kind === "leaf");
+}
+
 export function scanBrackets(text: string): BracketScan {
   const stack: number[] = [];
   const brackets: BracketScan["brackets"] = [];
