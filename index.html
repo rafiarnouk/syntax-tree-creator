@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Syntax Tree Creator</title>
+    <meta name="description" content="A code-editor-grade bracket notation editor for linguistic syntax trees." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap"
+    />
+  </head>
+  <body>
+    <div class="app">
+      <header>
+        <div>
+          <h1>Syntax Tree Creator</h1>
+          <p class="tagline">
+            Build a tree top-down: type <kbd>[</kbd> to open a node, fill in its label and content, press <kbd>Tab</kbd> to move to the next slot.
+          </p>
+        </div>
+        <button class="reset-btn" id="resetBtn" type="button">Load example</button>
+      </header>
+
+      <div class="workspace">
+        <section class="panel">
+          <div class="panel-head">
+            <span class="label">Bracket notation</span>
+            <span class="badge" id="charCount"></span>
+          </div>
+          <div class="editor-wrap">
+            <div class="gutter" id="gutter"></div>
+            <div class="editor-scroll" id="editorScroll">
+              <pre id="overlay" aria-hidden="true"></pre>
+              <textarea id="editor" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+              <div class="autocomplete" id="autocomplete" hidden></div>
+            </div>
+          </div>
+          <div class="status-line" id="statusLine">Line 1, Col 1</div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <span class="label">Tree</span>
+            <span class="badge" id="treeBadge"></span>
+          </div>
+          <div class="tree-area" id="treeArea"></div>
+        </section>
+      </div>
+
+      <footer>
+        <div class="legend" id="legend"></div>
+        <div class="shortcuts">
+          <kbd>[</kbd> opens a node · <kbd>Tab</kbd>/<kbd>Enter</kbd> advance, collapsing a finished leaf onto one line · ▾/▸ in the gutter
+          folds/unfolds a branch · click a tree node to jump to it
+        </div>
+      </footer>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

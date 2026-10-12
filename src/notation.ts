@@ -1,0 +1,172 @@
+// Labeled bracket notation, e.g. "[S [NP the dog] [VP barks]]".
+
+import type { BracketScan, EmptySlot, MatchSet, Token, TreeNode } from "./types";
+
+export function tokenize(text: string): Token[] {
+  const tokens: Token[] = [];
+  const re = /\[|\]|[^[\]\s]+/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const t = m[0];
+    tokens.push({
+      type: t === "[" ? "open" : t === "]" ? "close" : "word",
+      text: t,
+      start: m.index,
+      end: m.index + t.length,
+    });
+  }
+  return tokens;
+}
+
+export function parseTree(tokens: Token[]): TreeNode | null {
+  if (!tokens.length || tokens[0].type !== "open") return null;
+  let pos = 0;
+
+  function parseNode(): TreeNode {
+    const openTok = tokens[pos];
+    pos++;
+    let label = "";
+    if (tokens[pos] && tokens[pos].type === "word") {
+      label = tokens[pos].text;
+      pos++;
+    }
+    const children: TreeNode[] = [];
+    while (tokens[pos] && tokens[pos].type !== "close") {
+      if (tokens[pos].type === "open") {
+        children.push(parseNode());
+      } else {
+        children.push({ kind: "leaf", text: tokens[pos].text, start: tokens[pos].start, end: tokens[pos].end });
+        pos++;
+      }
+    }
+    const closeTok = tokens[pos];
+    pos++;
+    return {
+      kind: "phrase",
+      label,
+      children,
+      start: openTok.start,
+      end: closeTok ? closeTok.end : openTok.end,
+    };
+  }
+
+  return parseNode();
+}
+
+// A phrase with no children renders the same as a leaf — nothing to descend into.
+export function isLeaf(node: TreeNode): boolean {
+  return node.kind === "leaf" || node.children.length === 0;
+}
+
+export function scanBrackets(text: string): BracketScan {
+  const stack: number[] = [];
+  const brackets: BracketScan["brackets"] = [];
+  const errors: BracketScan["errors"] = [];
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "[") {
+      brackets.push({ index: i, type: "open" });
+      stack.push(brackets.length - 1);
+    } else if (ch === "]") {
+      if (stack.length === 0) {
+        brackets.push({ index: i, type: "close" });
+        errors.push({ index: i, message: 'Unexpected "]" — no matching "[" before it.' });
+      } else {
+        const openIdx = stack.pop()!;
+        brackets[openIdx].pairIndex = brackets.length;
+        brackets.push({ index: i, type: "close", pairIndex: openIdx });
+      }
+    }
+  }
+  for (const openIdx of stack) {
+    errors.push({ index: brackets[openIdx].index, message: 'Unclosed "[" — missing a matching "]".' });
+  }
+  return { brackets, errors, balanced: errors.length === 0 };
+}
+
+export function findMatchSet(scan: BracketScan, caret: number): MatchSet | null {
+  for (const pos of [caret - 1, caret]) {
+    const b = scan.brackets.find((x) => x.index === pos);
+    if (b) {
+      if (b.pairIndex !== undefined) return { a: b.index, b: scan.brackets[b.pairIndex].index };
+      return { a: b.index, b: -1 };
+    }
+  }
+  return null;
+}
+
+// All the terminal words under a node, in reading order — labels (NP, Det,
+// V...) are structure, not content, so they're left out.
+export function collectWords(node: TreeNode): string[] {
+  const words: string[] = [];
+  function walk(n: TreeNode) {
+    if (isLeaf(n)) {
+      if (n.kind === "leaf") words.push(n.text);
+      return;
+    }
+    if (n.kind !== "phrase") return;
+    for (const c of n.children) walk(c);
+  }
+  walk(node);
+  return words;
+}
+
+// Keeps a folded preview from growing as long as the thing it's hiding: show
+// whole words from the front and back until the budget runs out.
+export function buildPreview(words: string[]): string {
+  const MAX = 40;
+  const full = words.join(" ");
+  if (full.length <= MAX || words.length <= 2) return full;
+
+  const budget = MAX - 3;
+  const front: string[] = [];
+  const back: string[] = [];
+  let i = 0;
+  let j = words.length - 1;
+  let frontLen = 0;
+  let backLen = 0;
+
+  while (i < j) {
+    const tryFront = frontLen + words[i].length + (front.length ? 1 : 0);
+    const tryBack = backLen + words[j].length + (back.length ? 1 : 0);
+    if (tryFront + backLen <= budget && frontLen <= backLen) {
+      front.push(words[i]);
+      frontLen = tryFront;
+      i++;
+    } else if (tryBack + frontLen <= budget) {
+      back.unshift(words[j]);
+      backLen = tryBack;
+      j--;
+    } else {
+      break;
+    }
+  }
+  if (!front.length) front.push(words[0]);
+  if (!back.length) back.push(words[words.length - 1]);
+  return front.join(" ") + " … " + back.join(" ");
+}
+
+// A slot is a spot the guided top-down flow still needs filled: the label
+// right after a lone "[", or the blank indented line below it.
+export function findEmptySlots(text: string): EmptySlot[] {
+  const slots: EmptySlot[] = [];
+  let depth = 0;
+  let i = 0;
+  const n = text.length;
+  while (i <= n) {
+    let lineEnd = text.indexOf("\n", i);
+    if (lineEnd === -1) lineEnd = n;
+    const line = text.slice(i, lineEnd);
+    const depthAtLineStart = depth;
+    for (const ch of line) {
+      if (ch === "[") depth++;
+      else if (ch === "]") depth = Math.max(0, depth - 1);
+    }
+    if (/^\s*\[$/.test(line)) slots.push({ type: "label", at: i + line.length });
+    else if (/^\s*$/.test(line) && depthAtLineStart > 0) slots.push({ type: "content", at: i + line.length });
+    if (lineEnd === n) break;
+    i = lineEnd + 1;
+  }
+  return slots;
+}
