@@ -48,13 +48,18 @@ export default function TreeEditorApp() {
         <section className="panel">
           <div className="panel-head">
             <span className="label">Bracket notation</span>
-            <span className="badge" id="charCount" />
+            <div className="tree-controls">
+              <button className="reset-btn" id="formatBtn" type="button" title="Reformat to the standard indentation (collapses leaves, expands everything else)">
+                Auto-indent
+              </button>
+              <span className="badge" id="charCount" />
+            </div>
           </div>
           <div className="ref-row">
             <label htmlFor="refSentence" className="ref-label">
               Reference sentence
             </label>
-            <input type="text" id="refSentence" className="ref-input" placeholder="e.g. The dog chased the cat." autoComplete="off" />
+            <input type="text" id="refSentence" className="ref-input" placeholder="e.g. The dog might chase the cat." autoComplete="off" />
           </div>
           <div className="editor-wrap">
             <div className="gutter" id="gutter" />
@@ -95,6 +100,14 @@ export default function TreeEditorApp() {
                   Fit
                 </button>
               </div>
+              <div className="style-toggle" id="exportControls" role="group" aria-label="Save tree as an image">
+                <button type="button" className="style-btn" id="exportPngBtn" title="Save as PNG">
+                  PNG
+                </button>
+                <button type="button" className="style-btn" id="exportSvgBtn" title="Save as SVG">
+                  SVG
+                </button>
+              </div>
               <span className="badge" id="treeBadge" />
             </div>
           </div>
@@ -103,7 +116,6 @@ export default function TreeEditorApp() {
       </div>
 
       <footer>
-        <div className="legend" id="legend" />
         <div className="shortcuts">
           <kbd>[</kbd> opens a node · <kbd>Tab</kbd>/<kbd>Enter</kbd> advance, collapsing a finished leaf onto one line · ▾/▸ in the gutter
           folds/unfolds a branch · click a tree node to jump to it

@@ -2,6 +2,8 @@
 
 import type { BracketScan, EmptySlot, MatchSet, Token, TreeNode } from "./types";
 
+export const INDENT_UNIT = "    "; // 4 spaces per nesting level
+
 export function tokenize(text: string): Token[] {
   const tokens: Token[] = [];
   const re = /\[|\]|[^[\]\s]+/g;
@@ -62,6 +64,24 @@ export function isLeaf(node: TreeNode): boolean {
 // drawn as a triangle over the full string rather than three separate branches.
 export function isTriangleNode(node: TreeNode): boolean {
   return node.kind === "phrase" && node.children.length >= 2 && node.children.every((c) => c.kind === "leaf");
+}
+
+// Rebuilds a node's text in the same canonical shape the editor itself
+// produces: a node with no sub-brackets (blank, or one or more bare leaf
+// words) collapses onto one line; anything with nested structure expands,
+// one child per line.
+export function formatTree(node: TreeNode, depth = 0): string {
+  if (node.kind === "leaf") return node.text;
+  const opening = node.label ? "[" + node.label : "[";
+  const hasNested = node.children.some((c) => c.kind === "phrase");
+  if (!hasNested) {
+    const words = node.children.map((c) => (c.kind === "leaf" ? c.text : "")).join(" ");
+    return opening + (words ? " " + words : "") + "]";
+  }
+  const indent = INDENT_UNIT.repeat(depth);
+  const childIndent = INDENT_UNIT.repeat(depth + 1);
+  const childLines = node.children.map((c) => childIndent + formatTree(c, depth + 1));
+  return opening + "\n" + childLines.join("\n") + "\n" + indent + "]";
 }
 
 export function scanBrackets(text: string): BracketScan {

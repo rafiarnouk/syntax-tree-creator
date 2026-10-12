@@ -5,6 +5,8 @@ import {
   findEmptySlots,
   findEnclosingBracket,
   findMatchSet,
+  formatTree,
+  INDENT_UNIT,
   isLeaf,
   isTriangleNode,
   labelEnd,
@@ -16,7 +18,7 @@ import { layout } from "./layout";
 import type { BracketScan, FoldableNode, FoldRecord, LabelOption, MatchSet, TreeNode } from "./types";
 import { escapeHtml, lineOf } from "./utils";
 
-const UNIT = "    "; // 4 spaces per nesting level
+const UNIT = INDENT_UNIT;
 const DRAFT_KEY = "syntax-tree-creator-draft";
 const FOLDS_KEY = "syntax-tree-creator-folds";
 const STYLE_KEY = "syntax-tree-creator-style";
@@ -66,8 +68,8 @@ const LABELS: LabelOption[] = [
 ];
 
 const SAMPLE =
-  "[S\n    [NP [Det the] [N dog]]\n    [VP\n        [V chased]\n        [NP [Det the] [N cat]]\n    ]\n]";
-const SAMPLE_SENTENCE = "The dog chased the cat.";
+  "[TP\n    [DP\n        [D The]\n        [NP dog]\n    ]\n    [T\n        [T might]\n        [VP\n            [V chase]\n            [DP\n                [D the]\n                [NP cat]\n            ]\n        ]\n    ]\n]";
+const SAMPLE_SENTENCE = "The dog might chase the cat.";
 
 interface TreeSpan {
   start: number;
@@ -91,6 +93,9 @@ export class TreeEditor {
   private zoomInBtn: HTMLButtonElement;
   private zoomResetBtn: HTMLButtonElement;
   private zoomFitBtn: HTMLButtonElement;
+  private exportPngBtn: HTMLButtonElement;
+  private exportSvgBtn: HTMLButtonElement;
+  private formatBtn: HTMLButtonElement;
 
   private acOpen = false;
   private acItems: LabelOption[] = [];
@@ -121,9 +126,11 @@ export class TreeEditor {
     this.zoomInBtn = root.querySelector<HTMLButtonElement>("#zoomInBtn")!;
     this.zoomResetBtn = root.querySelector<HTMLButtonElement>("#zoomResetBtn")!;
     this.zoomFitBtn = root.querySelector<HTMLButtonElement>("#zoomFitBtn")!;
+    this.exportPngBtn = root.querySelector<HTMLButtonElement>("#exportPngBtn")!;
+    this.exportSvgBtn = root.querySelector<HTMLButtonElement>("#exportSvgBtn")!;
+    this.formatBtn = root.querySelector<HTMLButtonElement>("#formatBtn")!;
 
     this.bindEvents();
-    this.renderLegend(root);
     this.boot(root);
   }
 
@@ -226,12 +233,6 @@ export class TreeEditor {
     this.themeToggleEl.querySelectorAll<HTMLButtonElement>(".style-btn").forEach((btn) => {
       btn.classList.toggle("active", btn.getAttribute("data-theme-choice") === this.theme);
     });
-  }
-
-  private renderLegend(root: HTMLElement): void {
-    const names = ["Depth 1", "Depth 2", "Depth 3", "Depth 4", "Depth 5"];
-    const html = names.map((name, i) => `<span class="chip"><span class="dot" style="background:var(--depth-${i})"></span>${name}</span>`).join("");
-    root.querySelector<HTMLElement>("#legend")!.innerHTML = html;
   }
 
   // ---------- core update loop ----------
@@ -401,9 +402,15 @@ export class TreeEditor {
     this.treeArea.innerHTML = `<div class="tree-empty">${html}</div>`;
     this.treeBadge.textContent = "";
     this.treeSpans = [];
+    this.exportPngBtn.disabled = true;
+    this.exportSvgBtn.disabled = true;
+    this.formatBtn.disabled = true;
   }
 
   private renderTreeView(root: TreeNode, map: ReturnType<typeof buildFoldMap>["map"]): void {
+    this.exportPngBtn.disabled = false;
+    this.exportSvgBtn.disabled = false;
+    this.formatBtn.disabled = false;
     layout(root);
     this.treeSpans = [];
     interface DrawNode {
@@ -524,7 +531,17 @@ export class TreeEditor {
     this.treeBadge.textContent = `${phraseCount} ${phraseCount === 1 ? "node" : "nodes"} · ${leafCount} ${leafCount === 1 ? "leaf" : "leaves"}`;
   }
 
+  private clearActiveHighlight(): void {
+    this.treeArea.querySelectorAll(".tree-node.active").forEach((el) => el.classList.remove("active"));
+    this.treeArea.querySelector(".tree-node-highlight")?.remove();
+  }
+
   private highlightActiveNode(): void {
+    this.clearActiveHighlight();
+    // No caret to anchor a highlight to once focus has left the editor —
+    // otherwise a later re-render (e.g. clicking Auto-indent) would revive
+    // the highlight using a stale, no-longer-meaningful caret position.
+    if (document.activeElement !== this.ta) return;
     const caret = this.ta.selectionStart;
     let best: TreeSpan | null = null;
     for (const sp of this.treeSpans) {
@@ -532,8 +549,23 @@ export class TreeEditor {
         if (!best || sp.end - sp.start < best.end - best.start) best = sp;
       }
     }
-    this.treeArea.querySelectorAll(".tree-node.active").forEach((el) => el.classList.remove("active"));
-    if (best) document.getElementById(best.id)?.classList.add("active");
+    if (!best) return;
+    const el = document.getElementById(best.id);
+    if (!el) return;
+    el.classList.add("active");
+    const svg = this.treeArea.querySelector<SVGSVGElement>("svg.tree-svg");
+    if (!svg || !(el instanceof SVGGraphicsElement)) return;
+    const box = el.getBBox();
+    const PAD_X = 6;
+    const PAD_Y = 0;
+    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    rect.setAttribute("class", "tree-node-highlight");
+    rect.setAttribute("x", String(box.x - PAD_X));
+    rect.setAttribute("y", String(box.y - PAD_Y));
+    rect.setAttribute("width", String(box.width + PAD_X * 2));
+    rect.setAttribute("height", String(box.height + PAD_Y * 2));
+    rect.setAttribute("rx", "4");
+    svg.insertBefore(rect, svg.firstChild);
   }
 
   // ---------- caret pixel position (for autocomplete) ----------
@@ -956,7 +988,10 @@ export class TreeEditor {
       if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) this.update();
     });
     this.ta.addEventListener("scroll", () => this.syncScroll());
-    this.ta.addEventListener("blur", () => this.collapseLeafAtCursor());
+    this.ta.addEventListener("blur", () => {
+      this.collapseLeafAtCursor();
+      this.clearActiveHighlight();
+    });
 
     this.gutterEl.addEventListener("click", (e) => {
       const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(".fold-btn");
@@ -978,11 +1013,129 @@ export class TreeEditor {
       this.fitRequested = true;
       this.update();
     });
+
+    this.exportPngBtn.addEventListener("click", () => this.exportPng());
+    this.exportSvgBtn.addEventListener("click", () => this.exportSvg());
+    this.formatBtn.addEventListener("click", () => this.formatDocument());
   }
 
   private setZoom(z: number): void {
     this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
     this.update();
+  }
+
+  // ---------- export ----------
+
+  // A standalone copy of the live tree SVG: colors and fonts currently come
+  // from CSS custom properties and an external stylesheet, neither of which
+  // exist in a file opened outside this page, so every value gets resolved
+  // and baked in as a plain attribute. Sized to the tree's natural extent,
+  // ignoring the on-screen zoom level.
+  private getExportSvg(): SVGSVGElement | null {
+    const live = this.treeArea.querySelector<SVGSVGElement>(".tree-svg");
+    if (!live) return null;
+    const clone = live.cloneNode(true) as SVGSVGElement;
+    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+
+    const liveEls = Array.from(live.querySelectorAll<SVGElement>("*"));
+    const cloneEls = Array.from(clone.querySelectorAll<SVGElement>("*"));
+    liveEls.forEach((liveEl, i) => {
+      const cloneEl = cloneEls[i];
+      const cs = getComputedStyle(liveEl);
+      const tag = liveEl.tagName.toLowerCase();
+      if (tag === "text") {
+        cloneEl.setAttribute("fill", cs.fill);
+        cloneEl.setAttribute("font-family", cs.fontFamily);
+        cloneEl.setAttribute("font-style", cs.fontStyle);
+        cloneEl.setAttribute("font-weight", cs.fontWeight);
+        cloneEl.setAttribute("font-size", cs.fontSize);
+        cloneEl.removeAttribute("class");
+        cloneEl.removeAttribute("id");
+        cloneEl.removeAttribute("data-start");
+        cloneEl.removeAttribute("data-end");
+      } else if (tag === "line" || tag === "path" || tag === "polygon") {
+        cloneEl.setAttribute("stroke", cs.stroke);
+      } else if (tag === "rect" && liveEl.classList.contains("tree-node-highlight")) {
+        cloneEl.setAttribute("fill", cs.fill);
+        cloneEl.removeAttribute("class");
+      }
+    });
+
+    const viewBox = (clone.getAttribute("viewBox") || "0 0 0 0").split(" ").map(Number);
+    const w = viewBox[2] || 0;
+    const h = viewBox[3] || 0;
+    clone.setAttribute("width", String(w));
+    clone.setAttribute("height", String(h));
+
+    const bg = getComputedStyle(document.documentElement).getPropertyValue("--surface").trim() || "#fff";
+    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    rect.setAttribute("width", String(w));
+    rect.setAttribute("height", String(h));
+    rect.setAttribute("fill", bg);
+    clone.insertBefore(rect, clone.firstChild);
+
+    return clone;
+  }
+
+  private triggerDownload(blob: Blob, filename: string): void {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  private exportSvg(): void {
+    const svg = this.getExportSvg();
+    if (!svg) return;
+    const markup = '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(svg);
+    this.triggerDownload(new Blob([markup], { type: "image/svg+xml" }), "syntax-tree.svg");
+  }
+
+  private exportPng(): void {
+    const svg = this.getExportSvg();
+    if (!svg) return;
+    const w = parseFloat(svg.getAttribute("width") || "0");
+    const h = parseFloat(svg.getAttribute("height") || "0");
+    if (!w || !h) return;
+    const SCALE = 2; // supersample for a crisper raster export
+    const markup = new XMLSerializer().serializeToString(svg);
+    const url = URL.createObjectURL(new Blob([markup], { type: "image/svg+xml;charset=utf-8" }));
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = w * SCALE;
+      canvas.height = h * SCALE;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob((blob) => {
+          if (blob) this.triggerDownload(blob, "syntax-tree.png");
+          URL.revokeObjectURL(url);
+        }, "image/png");
+      } else {
+        URL.revokeObjectURL(url);
+      }
+    };
+    img.onerror = () => URL.revokeObjectURL(url);
+    img.src = url;
+  }
+
+  // Reparses the whole document and rewrites it in the editor's own
+  // canonical shape — useful after pasting in something messy. Fold state
+  // can't survive a full rewrite (every offset changes), so it's cleared.
+  private formatDocument(): void {
+    const value = this.ta.value;
+    const scan = scanBrackets(value);
+    if (!scan.balanced) return;
+    const tree = parseTree(tokenize(value));
+    if (!tree) return;
+    this.folds = [];
+    const formatted = formatTree(tree);
+    this.setValue(formatted, formatted.length);
   }
 
   private syncScroll(): void {
