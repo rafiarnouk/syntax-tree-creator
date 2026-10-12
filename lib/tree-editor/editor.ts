@@ -513,8 +513,8 @@ export class TreeEditor {
 
   private getCaretPixelPos(): { left: number; top: number } {
     const div = document.createElement("div");
-    const style = getComputedStyle(this.ta);
-    const props: (keyof CSSStyleDeclaration)[] = [
+    const style = getComputedStyle(this.ta) as unknown as Record<string, string>;
+    const props = [
       "fontFamily",
       "fontSize",
       "fontWeight",
@@ -529,7 +529,8 @@ export class TreeEditor {
       "boxSizing",
       "width",
     ];
-    for (const p of props) (div.style as any)[p] = style[p];
+    const divStyle = div.style as unknown as Record<string, string>;
+    for (const p of props) divStyle[p] = style[p];
     div.style.position = "absolute";
     div.style.visibility = "hidden";
     div.style.whiteSpace = "pre";

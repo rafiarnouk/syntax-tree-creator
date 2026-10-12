@@ -1,19 +1,31 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+# dependencies
+/node_modules
 
-node_modules
-dist
-dist-ssr
-*.local
+# next.js
+/.next/
+/out/
+next-env.d.ts
+
+# production
+/build
+
+# local-only notes for coding agents (not shared via the repo)
 CLAUDE.md
 
-# Editor directories and files
+# logs
+*.log
+npm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+
+# editor directories and files
 .vscode/*
 !.vscode/extensions.json
 .idea

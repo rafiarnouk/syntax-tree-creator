@@ -72,7 +72,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font-family: "Host Grotesk", sans-serif;
+  font-family: var(--font-host-grotesk), sans-serif;
 }
 
 .app {
@@ -93,7 +93,7 @@ header {
   flex-wrap: wrap;
 }
 header h1 {
-  font-family: "Boldonse", "IBM Plex Serif", serif;
+  font-family: var(--font-boldonse), var(--font-ibm-plex-serif), serif;
   font-weight: 400;
   font-size: 1.25rem;
   margin: 0;
@@ -170,7 +170,7 @@ header .reset-btn:focus-visible {
   color: var(--muted);
 }
 .panel-head .badge {
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-ibm-plex-mono), monospace;
   font-size: 0.74rem;
   color: var(--muted);
 }
@@ -253,7 +253,7 @@ header .reset-btn:focus-visible {
   overflow: hidden;
   background: var(--surface-2);
   border-right: 1px solid var(--border);
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-ibm-plex-mono), monospace;
   font-size: 13px;
   color: var(--muted);
   padding: 14px 8px 14px 0;
@@ -299,7 +299,7 @@ header .reset-btn:focus-visible {
   inset: 0;
   margin: 0;
   padding: 14px 16px;
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-ibm-plex-mono), monospace;
   font-size: 13px;
   line-height: var(--line-h);
   white-space: pre;
@@ -379,7 +379,7 @@ pre .fold-chip {
 .status-line {
   padding: 7px 14px;
   border-top: 1px solid var(--border);
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-ibm-plex-mono), monospace;
   font-size: 0.78rem;
   color: var(--muted);
   background: var(--surface-2);
@@ -409,7 +409,7 @@ pre .fold-chip {
   cursor: pointer;
 }
 .ac-item .ac-label {
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-ibm-plex-mono), monospace;
   font-weight: 600;
   font-size: 0.85rem;
 }
@@ -512,7 +512,7 @@ footer {
   gap: 6px;
   font-size: 0.76rem;
   color: var(--muted);
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-ibm-plex-mono), monospace;
 }
 .legend .chip .dot {
   width: 8px;
@@ -525,7 +525,7 @@ footer {
   color: var(--muted);
 }
 kbd {
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-ibm-plex-mono), monospace;
   background: var(--surface-3);
   border: 1px solid var(--border);
   border-radius: 4px;
