@@ -155,6 +155,7 @@ header .reset-btn:focus-visible {
 }
 .panel-head {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   gap: 10px;
@@ -176,6 +177,7 @@ header .reset-btn:focus-visible {
 }
 .tree-controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
 }
@@ -207,6 +209,48 @@ header .reset-btn:focus-visible {
 .style-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+}
+
+.zoom-toggle {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.zoom-btn {
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 4px 8px;
+  border: none;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+.zoom-btn:not(:last-child) {
+  border-right: 1px solid var(--border);
+}
+.zoom-btn:hover {
+  background: var(--surface-3);
+  color: var(--ink);
+}
+.zoom-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.zoom-btn:disabled:hover {
+  background: var(--surface);
+  color: var(--muted);
+}
+.zoom-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.zoom-pct {
+  font-family: var(--font-ibm-plex-mono), monospace;
+  min-width: 3.6ch;
+  text-align: center;
 }
 
 .ref-row {
@@ -432,15 +476,13 @@ pre .fold-chip {
   flex: 1;
   min-height: 380px;
   display: flex;
-  align-items: flex-start;
-  justify-content: center;
   overflow: auto;
   padding: 10px;
 }
 .tree-svg {
   display: block;
-  max-width: 100%;
-  height: auto;
+  flex: none;
+  margin: auto;
 }
 .tree-node {
   font-size: 14px;

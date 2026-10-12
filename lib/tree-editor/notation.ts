@@ -91,6 +91,30 @@ export function scanBrackets(text: string): BracketScan {
   return { brackets, errors, balanced: errors.length === 0 };
 }
 
+// The innermost "[...]" pair that actually contains `pos` — not just the
+// nearest bracket character in either direction. Used to ground editing
+// commands in the node the cursor is really inside, instead of guessing
+// from nearby lines (which breaks once there's more than one child, or the
+// cursor isn't at the "end" of anything).
+export function findEnclosingBracket(scan: BracketScan, pos: number): { openIdx: number; closeIdx: number } | null {
+  let best: { openIdx: number; closeIdx: number } | null = null;
+  for (const b of scan.brackets) {
+    if (b.type !== "open" || b.pairIndex === undefined) continue;
+    const close = scan.brackets[b.pairIndex];
+    if (b.index < pos && close.index >= pos) {
+      if (!best || b.index > best.openIdx) best = { openIdx: b.index, closeIdx: close.index };
+    }
+  }
+  return best;
+}
+
+// Where a node's label token ends, e.g. for "[NP ..." at openIdx, the offset
+// right after "NP". Falls back to right after "[" when there's no label.
+export function labelEnd(text: string, openIdx: number): number {
+  const m = /^\[([^[\]\s]+)?/.exec(text.slice(openIdx));
+  return m && m[1] ? openIdx + 1 + m[1].length : openIdx + 1;
+}
+
 export function findMatchSet(scan: BracketScan, caret: number): MatchSet | null {
   for (const pos of [caret - 1, caret]) {
     const b = scan.brackets.find((x) => x.index === pos);

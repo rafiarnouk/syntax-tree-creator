@@ -81,6 +81,20 @@ export default function TreeEditorApp() {
                   Fancy
                 </button>
               </div>
+              <div className="zoom-toggle" id="zoomControls" role="group" aria-label="Zoom">
+                <button type="button" className="zoom-btn" id="zoomOutBtn" aria-label="Zoom out">
+                  −
+                </button>
+                <button type="button" className="zoom-btn zoom-pct" id="zoomResetBtn" aria-label="Reset zoom to 100%">
+                  100%
+                </button>
+                <button type="button" className="zoom-btn" id="zoomInBtn" aria-label="Zoom in">
+                  +
+                </button>
+                <button type="button" className="zoom-btn" id="zoomFitBtn" aria-label="Fit tree to view">
+                  Fit
+                </button>
+              </div>
               <span className="badge" id="treeBadge" />
             </div>
           </div>

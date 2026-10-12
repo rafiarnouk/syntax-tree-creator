@@ -3,9 +3,11 @@ import {
   buildPreview,
   collectWords,
   findEmptySlots,
+  findEnclosingBracket,
   findMatchSet,
   isLeaf,
   isTriangleNode,
+  labelEnd,
   parseTree,
   scanBrackets,
   tokenize,
@@ -20,6 +22,9 @@ const FOLDS_KEY = "syntax-tree-creator-folds";
 const STYLE_KEY = "syntax-tree-creator-style";
 const THEME_KEY = "syntax-tree-creator-theme";
 const REF_KEY = "syntax-tree-creator-reference";
+const ZOOM_MIN = 0.25;
+const ZOOM_MAX = 2.5;
+const ZOOM_STEP = 1.2;
 
 type TreeStyle = "simple" | "fancy";
 type ThemeChoice = "light" | "dark";
@@ -82,6 +87,10 @@ export class TreeEditor {
   private styleToggleEl: HTMLElement;
   private themeToggleEl: HTMLElement;
   private refInput: HTMLInputElement;
+  private zoomOutBtn: HTMLButtonElement;
+  private zoomInBtn: HTMLButtonElement;
+  private zoomResetBtn: HTMLButtonElement;
+  private zoomFitBtn: HTMLButtonElement;
 
   private acOpen = false;
   private acItems: LabelOption[] = [];
@@ -93,6 +102,8 @@ export class TreeEditor {
   private prevValue = "";
   private treeStyle: TreeStyle = "simple";
   private theme: ThemeChoice = "light";
+  private zoom = 1;
+  private fitRequested = false;
 
   constructor(root: HTMLElement) {
     this.ta = root.querySelector<HTMLTextAreaElement>("#editor")!;
@@ -106,6 +117,10 @@ export class TreeEditor {
     this.styleToggleEl = root.querySelector<HTMLElement>("#styleToggle")!;
     this.themeToggleEl = root.querySelector<HTMLElement>("#themeToggle")!;
     this.refInput = root.querySelector<HTMLInputElement>("#refSentence")!;
+    this.zoomOutBtn = root.querySelector<HTMLButtonElement>("#zoomOutBtn")!;
+    this.zoomInBtn = root.querySelector<HTMLButtonElement>("#zoomInBtn")!;
+    this.zoomResetBtn = root.querySelector<HTMLButtonElement>("#zoomResetBtn")!;
+    this.zoomFitBtn = root.querySelector<HTMLButtonElement>("#zoomFitBtn")!;
 
     this.bindEvents();
     this.renderLegend(root);
@@ -449,15 +464,27 @@ export class TreeEditor {
 
     const PAD = 44;
     const LEVEL_H = 70;
+    const NODE_GAP = 11; // line clearance above/below a node's (vertically centered) text
     const w = maxX + PAD * 2;
     const h = (maxDepth + 1) * LEVEL_H + PAD * 1.4;
     const simple = this.treeStyle === "simple";
-    let svg = `<svg class="tree-svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">`;
+
+    if (this.fitRequested) {
+      this.fitRequested = false;
+      const availW = this.treeArea.clientWidth - 20; // minus .tree-area's own padding
+      const availH = this.treeArea.clientHeight - 20;
+      if (availW > 0 && availH > 0) this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.min(availW / w, availH / h)));
+    }
+    this.zoomResetBtn.textContent = Math.round(this.zoom * 100) + "%";
+    this.zoomOutBtn.disabled = this.zoom <= ZOOM_MIN;
+    this.zoomInBtn.disabled = this.zoom >= ZOOM_MAX;
+
+    let svg = `<svg class="tree-svg" viewBox="0 0 ${w} ${h}" width="${w * this.zoom}" height="${h * this.zoom}">`;
     for (const l of lines) {
       const x1 = l.x1 + PAD;
-      const y1 = l.y1 * LEVEL_H + PAD + 10;
+      const y1 = l.y1 * LEVEL_H + PAD + NODE_GAP;
       const x2 = l.x2 + PAD;
-      const y2 = l.y2 * LEVEL_H + PAD - 12;
+      const y2 = l.y2 * LEVEL_H + PAD - NODE_GAP;
       if (simple) {
         svg += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="var(--ink)" stroke-width="1"/>`;
       } else {
@@ -466,8 +493,8 @@ export class TreeEditor {
     }
     for (const t of triangles) {
       const apexX = t.x + PAD;
-      const apexY = t.apexDepth * LEVEL_H + PAD + 10;
-      const baseY = t.baseDepth * LEVEL_H + PAD - 12;
+      const apexY = t.apexDepth * LEVEL_H + PAD + NODE_GAP;
+      const baseY = t.baseDepth * LEVEL_H + PAD - NODE_GAP;
       const baseX1 = t.x + PAD - t.halfWidth;
       const baseX2 = t.x + PAD + t.halfWidth;
       const stroke = simple ? "var(--ink)" : `var(--depth-${t.depth % 5})`;
@@ -477,7 +504,7 @@ export class TreeEditor {
       const colorCls = simple ? (n.leaf ? "simple-leaf" : "simple-node") : "d" + (n.depth % 5);
       const cls = (n.leaf ? "leaf" : "label") + " " + colorCls;
       const label = n.leaf ? n.text : n.label || "∅";
-      svg += `<text id="${n.id}" class="tree-node ${cls}" data-start="${n.start}" data-end="${n.end}" x="${n.x + PAD}" y="${n.depth * LEVEL_H + PAD}" text-anchor="middle">${escapeHtml(label)}</text>`;
+      svg += `<text id="${n.id}" class="tree-node ${cls}" data-start="${n.start}" data-end="${n.end}" x="${n.x + PAD}" y="${n.depth * LEVEL_H + PAD}" text-anchor="middle" dominant-baseline="central">${escapeHtml(label)}</text>`;
     }
     svg += "</svg>";
     this.treeArea.innerHTML = svg;
@@ -678,89 +705,176 @@ export class TreeEditor {
     if (m) this.setValue(value.slice(0, lineStart) + value.slice(lineStart + m[0].length), Math.max(lineStart, ss - m[0].length));
   }
 
-  // Finishes the current slot: collapses it to one line if it's a plain
-  // leaf, then opens a new sibling slot one level up.
-  private advance(): void {
-    const value = this.ta.value;
-    const ss = this.ta.selectionStart;
+  // Inserts a plain newline at `pos`, indented to match — the same thing any
+  // text editor's Enter key would do. This is the fallback whenever the
+  // cursor isn't somewhere the guided flow recognizes, so editing in the
+  // middle of an existing tree is predictable instead of jumping somewhere
+  // unrelated.
+  private insertPlainNewline(value: string, pos: number): void {
+    const depth = Math.max(0, this.computeDepthAt(value, pos));
+    const ins = "\n" + UNIT.repeat(depth);
+    this.setValue(value.slice(0, pos) + ins + value.slice(pos), pos + ins.length);
+  }
 
-    const jump = this.nextBlankLineEnd(value, ss);
+  // If the node enclosing `pos` has no sub-brackets in it (blank, or a
+  // plain — possibly multi-word — leaf), collapses it onto one line, e.g.
+  // "[Det\n    the\n]" -> "[Det the]", "[VP\n    \n]" -> "[VP]". Returns the
+  // new value and the offset right after the collapsed node's "]", or null
+  // if this node already has nested structure (nothing to collapse).
+  private collapseSimpleLeaf(value: string, enclosing: { openIdx: number; closeIdx: number }): { value: string; afterClose: number } | null {
+    const lEnd = labelEnd(value, enclosing.openIdx);
+    const inner = value.slice(lEnd, enclosing.closeIdx);
+    if (inner.includes("[")) return null;
+    const opening = value.slice(enclosing.openIdx, lEnd);
+    const trimmedInner = inner.trim();
+    const collapsed = trimmedInner ? opening + " " + trimmedInner + "]" : opening + "]";
+    const newVal = value.slice(0, enclosing.openIdx) + collapsed + value.slice(enclosing.closeIdx + 1);
+    return { value: newVal, afterClose: enclosing.openIdx + collapsed.length };
+  }
+
+  // Jumps into an existing empty slot — either a blank line already sitting
+  // below a label (the fresh top-down case), or a node that's already
+  // collapsed to one line with nothing in it, e.g. "[VP]", which gets
+  // re-expanded into a fresh content line. Returns false (and does nothing)
+  // when there's no such slot at the cursor, so callers can fall back to
+  // their own behavior instead of this silently being a no-op.
+  private enterBlankSlot(): boolean {
+    if (this.ta.selectionStart !== this.ta.selectionEnd) return false;
+    const value = this.ta.value;
+    const pos = this.ta.selectionStart;
+
+    const jump = this.nextBlankLineEnd(value, pos);
     if (jump !== null) {
       this.ta.setSelectionRange(jump, jump);
       this.update();
+      return true;
+    }
+
+    const scan = scanBrackets(value);
+    if (!scan.balanced) return false;
+    const enclosing = findEnclosingBracket(scan, pos);
+    if (!enclosing) return false;
+
+    const lEnd = labelEnd(value, enclosing.openIdx);
+    const inner = value.slice(lEnd, enclosing.closeIdx);
+    if (inner.includes("\n") || inner.trim() !== "") return false; // not a collapsed empty node
+
+    const depth = Math.max(0, this.computeDepthAt(value, enclosing.openIdx));
+    const opening = value.slice(enclosing.openIdx, lEnd);
+    const skeleton = opening + "\n" + UNIT.repeat(depth + 1) + "\n" + UNIT.repeat(depth) + "]";
+    const newVal = value.slice(0, enclosing.openIdx) + skeleton + value.slice(enclosing.closeIdx + 1);
+    const contentPos = enclosing.openIdx + opening.length + 1 + UNIT.repeat(depth + 1).length;
+    this.setValue(newVal, contentPos);
+    return true;
+  }
+
+  // Finishes whatever's at the cursor and moves on, the way Tab/Enter are
+  // expected to. What "finishing" means depends on where the cursor
+  // actually is, found via real bracket matching rather than assumptions
+  // about nearby lines:
+  //  - an empty or already-typed slot -> enterBlankSlot() jumps into it
+  //  - end of a node with no children yet (blank, or one plain leaf word)
+  //    -> collapse it to one line and open a new sibling slot after it
+  //  - end of a node that already has children -> open a new child slot
+  //    inside it, so you can go back and add another branch later
+  //  - anywhere else (mid-word, between existing siblings, ...) -> just
+  //    insert a newline at the cursor, like a normal text editor would
+  private advance(): void {
+    if (this.enterBlankSlot()) return;
+
+    const value = this.ta.value;
+    const pos = this.ta.selectionStart;
+    const scan = scanBrackets(value);
+    if (!scan.balanced) {
+      this.insertPlainNewline(value, pos);
       return;
     }
 
-    const closeIdx = value.indexOf("]", ss);
-    if (closeIdx === -1) {
-      this.setValue(value.slice(0, ss) + UNIT + value.slice(ss), ss + UNIT.length);
+    const enclosing = findEnclosingBracket(scan, pos);
+    if (!enclosing) {
+      this.insertPlainNewline(value, pos);
       return;
     }
 
-    const curEnd = this.lineEndOf(value, ss);
-    const lineStart = value.lastIndexOf("\n", ss - 1) + 1;
-    const trimmed = value.slice(lineStart, curEnd).trim();
-
-    if (trimmed === "") {
-      // this slot was never filled in — remove it instead of leaving a stray blank line
-      const removeThrough = curEnd < value.length ? curEnd + 1 : curEnd;
-      const withoutLine = value.slice(0, lineStart) + value.slice(removeThrough);
-      const shiftedCloseIdx = closeIdx - (removeThrough - lineStart);
-      const insAt = shiftedCloseIdx + 1;
-      const depthRemoved = Math.max(0, this.computeDepthAt(withoutLine, insAt));
-      const lineRemoved = "\n" + UNIT.repeat(depthRemoved);
-      this.setValue(withoutLine.slice(0, insAt) + lineRemoved + withoutLine.slice(insAt), insAt + lineRemoved.length);
+    const tail = value.slice(pos, enclosing.closeIdx);
+    if (tail.trim() !== "") {
+      // cursor isn't at the end of this node's content — a normal, local edit
+      this.insertPlainNewline(value, pos);
       return;
     }
 
-    const labelLineEnd = lineStart - 1; // the "\n" right before this content line
-    if (trimmed.charAt(0) !== "[" && labelLineEnd >= 0) {
-      // the content turned out to be a leaf word, not a nested node —
-      // collapse the label + content back onto one line, e.g. "[Det the]"
-      const labelLineStart = value.lastIndexOf("\n", labelLineEnd - 1) + 1;
-      const mLabel = /^(\s*)\[(.*)$/.exec(value.slice(labelLineStart, labelLineEnd));
-      if (mLabel) {
-        const collapsed = mLabel[1] + "[" + mLabel[2] + " " + trimmed + "]";
-        const collapsedVal = value.slice(0, labelLineStart) + collapsed + value.slice(closeIdx + 1);
-        const afterCollapsedClose = labelLineStart + collapsed.length;
-        const depthCollapsed = Math.max(0, this.computeDepthAt(collapsedVal, afterCollapsedClose));
-        const lineCollapsed = "\n" + UNIT.repeat(depthCollapsed);
-        this.setValue(
-          collapsedVal.slice(0, afterCollapsedClose) + lineCollapsed + collapsedVal.slice(afterCollapsedClose),
-          afterCollapsedClose + lineCollapsed.length,
-        );
+    const lEnd = labelEnd(value, enclosing.openIdx);
+    const inner = value.slice(lEnd, enclosing.closeIdx);
+
+    if (!inner.includes("[")) {
+      // blank, or a single (possibly multi-word) leaf — finish/tidy it, then
+      // open a sibling slot for this node's parent
+      const collapsed = this.collapseSimpleLeaf(value, enclosing)!;
+      this.placeSiblingSlot(collapsed.value, collapsed.afterClose);
+      return;
+    }
+
+    // this node already has children — offer a new child slot inside it,
+    // right before its closing bracket, so another branch can be added
+    const closeLineStart = value.lastIndexOf("\n", enclosing.closeIdx - 1) + 1;
+    const closeLine = value.slice(closeLineStart, this.lineEndOf(value, closeLineStart));
+    if (/^\s*\]/.test(closeLine)) {
+      // reuse an already-blank line right before the closing bracket, if
+      // there is one, instead of adding a redundant second one
+      const prevLineEnd = Math.max(0, closeLineStart - 1);
+      const prevLineStart = value.lastIndexOf("\n", prevLineEnd - 1) + 1;
+      if (closeLineStart > 0 && value.slice(prevLineStart, prevLineEnd).trim() === "") {
+        this.setValue(value, prevLineEnd);
         return;
       }
+      const childDepth = Math.max(0, this.computeDepthAt(value, enclosing.closeIdx));
+      const insertion = UNIT.repeat(childDepth) + "\n";
+      this.setValue(value.slice(0, closeLineStart) + insertion + value.slice(closeLineStart), closeLineStart + UNIT.repeat(childDepth).length);
+      return;
     }
+    // closing bracket isn't on its own line (irregular/manually-edited structure) — stay predictable
+    this.insertPlainNewline(value, pos);
+  }
 
-    // already nested, or an irregular edit — just pop out past it as-is
-    const afterClose = closeIdx + 1;
-    const depthAfter = Math.max(0, this.computeDepthAt(value, afterClose));
-    const newLine = "\n" + UNIT.repeat(depthAfter);
+  // After finishing a node, decide where "the next slot" is: reuse a blank
+  // line if one's already sitting right there (e.g. from resuming an
+  // earlier node), skip past an existing sibling if one already follows, or
+  // open a fresh slot if this was the last child so far.
+  private placeSiblingSlot(value: string, afterClose: number): void {
+    const reuse = this.nextBlankLineEnd(value, afterClose);
+    if (reuse !== null) {
+      this.setValue(value, reuse);
+      return;
+    }
+    const nextLineStart = value.charAt(afterClose) === "\n" ? afterClose + 1 : afterClose;
+    const nextLineEnd = this.lineEndOf(value, nextLineStart);
+    const nextLine = value.slice(nextLineStart, nextLineEnd);
+    if (nextLineStart < value.length && nextLine.trim() !== "" && !/^\s*\]/.test(nextLine)) {
+      // a sibling already sits right here — nothing to insert, just move on
+      this.setValue(value, nextLineStart);
+      return;
+    }
+    const depth = Math.max(0, this.computeDepthAt(value, afterClose));
+    const newLine = "\n" + UNIT.repeat(depth);
     this.setValue(value.slice(0, afterClose) + newLine + value.slice(afterClose), afterClose + newLine.length);
   }
 
-  // Like advance()'s leaf-collapse step, but never deletes or adds a line —
-  // used on blur, where nothing should type into a new slot afterward.
+  // Tidies a finished leaf onto one line without deleting or adding a line —
+  // used on blur, where nothing's about to type into a new slot afterward.
   private collapseLeafAtCursor(): void {
+    if (this.ta.selectionStart !== this.ta.selectionEnd) return;
     const value = this.ta.value;
-    const ss = this.ta.selectionStart;
-    const se = this.ta.selectionEnd;
-    if (ss !== se) return;
-    const closeIdx = value.indexOf("]", ss);
-    if (closeIdx === -1) return;
-    const curEnd = this.lineEndOf(value, ss);
-    const lineStart = value.lastIndexOf("\n", ss - 1) + 1;
-    const trimmed = value.slice(lineStart, curEnd).trim();
-    if (trimmed === "" || trimmed.charAt(0) === "[") return;
-    const labelLineEnd = lineStart - 1;
-    if (labelLineEnd < 0) return;
-    const labelLineStart = value.lastIndexOf("\n", labelLineEnd - 1) + 1;
-    const mLabel = /^(\s*)\[(.*)$/.exec(value.slice(labelLineStart, labelLineEnd));
-    if (!mLabel) return;
-    const collapsed = mLabel[1] + "[" + mLabel[2] + " " + trimmed + "]";
-    const collapsedVal = value.slice(0, labelLineStart) + collapsed + value.slice(closeIdx + 1);
-    this.setValue(collapsedVal, labelLineStart + collapsed.length);
+    const pos = this.ta.selectionStart;
+    const scan = scanBrackets(value);
+    if (!scan.balanced) return;
+    const enclosing = findEnclosingBracket(scan, pos);
+    if (!enclosing) return;
+    if (value.slice(pos, enclosing.closeIdx).trim() !== "") return; // not at the end of this node's content
+
+    const lEnd = labelEnd(value, enclosing.openIdx);
+    if (!value.slice(lEnd, enclosing.closeIdx).trim()) return; // blank — leave it for advance() to handle
+    const collapsed = this.collapseSimpleLeaf(value, enclosing);
+    if (collapsed) this.setValue(collapsed.value, collapsed.afterClose);
   }
 
   // ---------- folding ----------
@@ -856,6 +970,19 @@ export class TreeEditor {
           btn.getAttribute("data-preview") || "",
         );
     });
+
+    this.zoomOutBtn.addEventListener("click", () => this.setZoom(this.zoom / ZOOM_STEP));
+    this.zoomInBtn.addEventListener("click", () => this.setZoom(this.zoom * ZOOM_STEP));
+    this.zoomResetBtn.addEventListener("click", () => this.setZoom(1));
+    this.zoomFitBtn.addEventListener("click", () => {
+      this.fitRequested = true;
+      this.update();
+    });
+  }
+
+  private setZoom(z: number): void {
+    this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+    this.update();
   }
 
   private syncScroll(): void {
@@ -897,6 +1024,17 @@ export class TreeEditor {
       }
       this.advance();
       return;
+    }
+
+    if (e.key === " " && ss === se) {
+      // Only jumps into an existing empty slot (e.g. "NP" + space lands in
+      // its content). Unlike Tab/Enter it never collapses/pops out a filled
+      // slot — space has to stay a normal character or multi-word leaf
+      // content like "the dog" couldn't be typed.
+      if (this.enterBlankSlot()) {
+        e.preventDefault();
+        return;
+      }
     }
 
     if (e.key === "[") {
