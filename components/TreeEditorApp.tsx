@@ -10,7 +10,7 @@ import { DownloadIcon, HighlighterIcon, MoonIcon, SearchIcon, SunIcon } from "@/
 // just mounts it once; the `mounted` guard is needed because React's Strict
 // Mode runs effects twice in development, which would otherwise attach every
 // event listener twice.
-export default function TreeEditorApp() {
+export default function TreeEditorApp({ hidden }: { hidden?: boolean }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const mounted = useRef(false);
 
@@ -21,7 +21,7 @@ export default function TreeEditorApp() {
   }, []);
 
   return (
-    <div className="app" ref={rootRef}>
+    <div className="app" ref={rootRef} hidden={hidden}>
       <header>
         <div>
           <h1>Syntax Tree Creator</h1>

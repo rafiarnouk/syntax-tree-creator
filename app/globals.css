@@ -99,6 +99,54 @@ body {
   gap: 18px;
 }
 
+/* A deliberately bigger, separate control from anything inside a page's own
+   header — switching mode is switching pages, not flipping a minor setting. */
+.mode-switch-wrap {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 24px 20px 0;
+}
+.mode-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.mode-switch-tab {
+  font: inherit;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 18px;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  cursor: pointer;
+}
+.mode-switch-tab:hover {
+  border-color: var(--accent);
+}
+.mode-switch-tab.active {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.1);
+}
+.mode-switch-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.mode-switch-title {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--ink);
+}
+.mode-switch-tab.active .mode-switch-title {
+  color: var(--accent);
+}
+.mode-switch-desc {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
 header {
   display: flex;
   justify-content: space-between;
@@ -149,6 +197,19 @@ header .tagline {
 }
 .reset-btn:disabled:hover {
   background: transparent;
+}
+.reset-btn.primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
+.reset-btn.primary:hover {
+  background: var(--accent);
+  opacity: 0.9;
+}
+.reset-btn.primary:disabled {
+  background: var(--accent);
+  opacity: 0.35;
 }
 .header-controls {
   display: flex;
@@ -655,6 +716,204 @@ pre .indent-guide {
 }
 .tree-empty b {
   color: var(--ink);
+}
+
+/* ---------- bottom-up merge builder ---------- */
+
+.mb-tray-panel {
+  height: auto;
+  max-height: 48vh;
+}
+.mb-tree-panel {
+  height: 62vh;
+}
+.mb-hint {
+  padding: 8px 14px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.mb-tray {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  align-content: flex-start;
+  gap: 8px;
+}
+.mb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  cursor: pointer;
+}
+.mb-chip.picked {
+  background: rgba(var(--accent-rgb), 0.16);
+  border-color: var(--accent);
+}
+.mb-chip.candidate {
+  border: 1.5px dashed var(--accent);
+}
+.mb-chip.dim {
+  opacity: 0.4;
+}
+.mb-chip.dragging {
+  opacity: 0.4;
+}
+.mb-chip.drop-before {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.mb-chip.drop-after {
+  box-shadow: inset -2px 0 0 var(--accent);
+}
+.mb-chip-grip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  color: var(--muted);
+  cursor: grab;
+}
+.mb-chip-grip:hover {
+  color: var(--ink);
+}
+.mb-chip-grip:active {
+  cursor: grabbing;
+}
+.mb-chip-field {
+  font: inherit;
+  font-size: 0.85rem;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: text;
+}
+.mb-chip-field:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.mb-chip-label-field {
+  width: 3.6em;
+}
+.mb-chip-content-field {
+  width: 7em;
+}
+.mb-chip-merged {
+  background: var(--surface-3);
+}
+.mb-chip-gloss {
+  font-size: 0.85rem;
+  white-space: nowrap;
+  padding: 0 2px;
+}
+.mb-chip-gloss b {
+  font-weight: 700;
+}
+.mb-chip .reset-btn {
+  height: 22px;
+  padding: 0 8px;
+  font-size: 0.68rem;
+}
+.mb-mini-btn {
+  font: inherit;
+  font-size: 11px;
+  width: 22px;
+  height: 22px;
+  line-height: 1;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.mb-mini-btn:hover {
+  background: var(--surface-3);
+  color: var(--ink);
+}
+.mb-mini-btn.danger:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.mb-mini-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.mb-mini-btn:disabled:hover {
+  background: var(--surface);
+  color: var(--muted);
+}
+.mb-insert-btn {
+  font: inherit;
+  font-size: 12px;
+  width: 18px;
+  align-self: stretch;
+  padding: 0;
+  border: 1.5px dashed var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0.55;
+}
+.mb-insert-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  opacity: 1;
+}
+.mb-merge-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.mb-merge-gloss {
+  font-family: var(--font-ibm-plex-mono), monospace;
+  font-size: 0.8rem;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+.mb-merge-plus,
+.mb-merge-arrow {
+  color: var(--muted);
+  font-weight: 600;
+  flex: none;
+}
+.mb-merge-input {
+  flex: 1;
+  min-width: 140px;
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+}
+.mb-merge-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
 }
 
 footer {
