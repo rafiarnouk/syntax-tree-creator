@@ -12,9 +12,10 @@ import {
   labelEnd,
   parseTree,
   scanBrackets,
+  stripQuotes,
   tokenize,
 } from "./notation";
-import { layout } from "./layout";
+import { layout, LEAF_GAP } from "./layout";
 import type { BracketScan, FoldableNode, FoldRecord, LabelOption, MatchSet, TreeNode } from "./types";
 import { escapeHtml, lineOf } from "./utils";
 
@@ -24,6 +25,7 @@ const FOLDS_KEY = "syntax-tree-creator-folds";
 const STYLE_KEY = "syntax-tree-creator-style";
 const THEME_KEY = "syntax-tree-creator-theme";
 const REF_KEY = "syntax-tree-creator-reference";
+const HIGHLIGHTS_KEY = "syntax-tree-creator-highlights";
 const ZOOM_MIN = 0.25;
 const ZOOM_MAX = 2.5;
 const ZOOM_STEP = 1.2;
@@ -39,6 +41,9 @@ const SHORTCUTS: Record<string, string> = {
 
 // Disabled for now; showAutocomplete/chooseAutocomplete etc. stay in place.
 const AUTOCOMPLETE_ENABLED = false;
+
+const FORMAT_BTN_TITLE = "Reformat to the standard indentation (collapses leaves, expands everything else)";
+const FORMAT_BTN_FOLDED_TITLE = "Auto-indent is disabled while a node is collapsed — expand it first";
 
 const LABELS: LabelOption[] = [
   { key: "S", desc: "Sentence" },
@@ -68,7 +73,7 @@ const LABELS: LabelOption[] = [
 ];
 
 const SAMPLE =
-  "[TP\n    [DP\n        [D The]\n        [NP dog]\n    ]\n    [T\n        [T might]\n        [VP\n            [V chase]\n            [DP\n                [D the]\n                [NP cat]\n            ]\n        ]\n    ]\n]";
+  "[TP\n    [DP_1\n        [D The]\n        [NP dog]\n    ]\n    [T\n        [T might]\n        [VP\n            [V chase]\n            [DP_2\n                [D the]\n                [NP cat]\n            ]\n        ]\n    ]\n]";
 const SAMPLE_SENTENCE = "The dog might chase the cat.";
 
 interface TreeSpan {
@@ -85,6 +90,7 @@ export class TreeEditor {
   private charCountEl: HTMLElement;
   private treeArea: HTMLElement;
   private treeBadge: HTMLElement;
+  private treeLegendEl: HTMLElement;
   private acEl: HTMLElement;
   private styleToggleEl: HTMLElement;
   private themeToggleEl: HTMLElement;
@@ -96,6 +102,7 @@ export class TreeEditor {
   private exportPngBtn: HTMLButtonElement;
   private exportSvgBtn: HTMLButtonElement;
   private formatBtn: HTMLButtonElement;
+  private highlightToggleBtn: HTMLButtonElement;
 
   private acOpen = false;
   private acItems: LabelOption[] = [];
@@ -103,12 +110,16 @@ export class TreeEditor {
   private acRange: [number, number] | null = null;
 
   private treeSpans: TreeSpan[] = [];
+  private treeNodeById = new Map<string, TreeNode>();
+  private parentByTreeNode = new Map<TreeNode, TreeNode>();
+  private idsByTreeNode = new Map<TreeNode, string[]>();
   private folds: FoldRecord[] = [];
   private prevValue = "";
   private treeStyle: TreeStyle = "simple";
   private theme: ThemeChoice = "light";
   private zoom = 1;
   private fitRequested = false;
+  private highlightsEnabled = true;
 
   constructor(root: HTMLElement) {
     this.ta = root.querySelector<HTMLTextAreaElement>("#editor")!;
@@ -118,6 +129,7 @@ export class TreeEditor {
     this.charCountEl = root.querySelector<HTMLElement>("#charCount")!;
     this.treeArea = root.querySelector<HTMLElement>("#treeArea")!;
     this.treeBadge = root.querySelector<HTMLElement>("#treeBadge")!;
+    this.treeLegendEl = root.querySelector<HTMLElement>("#treeLegend")!;
     this.acEl = root.querySelector<HTMLElement>("#autocomplete")!;
     this.styleToggleEl = root.querySelector<HTMLElement>("#styleToggle")!;
     this.themeToggleEl = root.querySelector<HTMLElement>("#themeToggle")!;
@@ -129,6 +141,7 @@ export class TreeEditor {
     this.exportPngBtn = root.querySelector<HTMLButtonElement>("#exportPngBtn")!;
     this.exportSvgBtn = root.querySelector<HTMLButtonElement>("#exportSvgBtn")!;
     this.formatBtn = root.querySelector<HTMLButtonElement>("#formatBtn")!;
+    this.highlightToggleBtn = root.querySelector<HTMLButtonElement>("#highlightToggleBtn")!;
 
     this.bindEvents();
     this.boot(root);
@@ -166,11 +179,18 @@ export class TreeEditor {
     } catch {
       /* private browsing / storage disabled */
     }
+    try {
+      const savedHighlights = localStorage.getItem(HIGHLIGHTS_KEY);
+      if (savedHighlights !== null) this.highlightsEnabled = savedHighlights !== "0";
+    } catch {
+      /* private browsing / storage disabled */
+    }
 
     this.ta.value = saved || "";
     this.prevValue = this.ta.value;
     this.renderStyleToggle();
     this.applyTheme();
+    this.applyHighlightToggle();
     this.update();
     this.ta.setSelectionRange(this.ta.value.length, this.ta.value.length);
 
@@ -220,6 +240,23 @@ export class TreeEditor {
         /* private browsing / storage disabled */
       }
     });
+
+    this.highlightToggleBtn.addEventListener("click", () => {
+      this.highlightsEnabled = !this.highlightsEnabled;
+      this.applyHighlightToggle();
+      try {
+        localStorage.setItem(HIGHLIGHTS_KEY, this.highlightsEnabled ? "1" : "0");
+      } catch {
+        /* private browsing / storage disabled */
+      }
+      this.highlightActiveNode();
+    });
+  }
+
+  private applyHighlightToggle(): void {
+    this.highlightToggleBtn.classList.toggle("off", !this.highlightsEnabled);
+    this.highlightToggleBtn.setAttribute("aria-pressed", String(this.highlightsEnabled));
+    this.highlightToggleBtn.title = this.highlightsEnabled ? "Disable node highlighting" : "Enable node highlighting";
   }
 
   private renderStyleToggle(): void {
@@ -328,6 +365,21 @@ export class TreeEditor {
       }
     }
 
+    // One vertical guide per complete indent unit in a line's leading whitespace,
+    // marked on that unit's first space so it lines up with the content below it.
+    let lineStart = 0;
+    for (let i = 0; i <= text.length; i++) {
+      if (i === text.length || text[i] === "\n") {
+        const leading = /^ */.exec(text.slice(lineStart, i))![0].length;
+        const depth = Math.floor(leading / UNIT.length);
+        for (let lvl = 1; lvl <= depth; lvl++) {
+          const pos = lineStart + (lvl - 1) * UNIT.length;
+          pieces[pos] = `<span class="indent-guide">${pieces[pos]}</span>`;
+        }
+        lineStart = i + 1;
+      }
+    }
+
     const slotMap = new Map<number, { type: "label" | "content"; at: number }[]>();
     for (const slot of findEmptySlots(text)) {
       const arr = slotMap.get(slot.at) ?? [];
@@ -410,9 +462,19 @@ export class TreeEditor {
   private renderTreeView(root: TreeNode, map: ReturnType<typeof buildFoldMap>["map"]): void {
     this.exportPngBtn.disabled = false;
     this.exportSvgBtn.disabled = false;
-    this.formatBtn.disabled = false;
+    this.formatBtn.disabled = this.folds.length > 0;
+    this.formatBtn.title = this.folds.length > 0 ? FORMAT_BTN_FOLDED_TITLE : FORMAT_BTN_TITLE;
     layout(root);
     this.treeSpans = [];
+    this.treeNodeById = new Map();
+    this.parentByTreeNode = new Map();
+    this.idsByTreeNode = new Map();
+    const addId = (node: TreeNode, id: string) => {
+      this.treeNodeById.set(id, node);
+      const ids = this.idsByTreeNode.get(node) ?? [];
+      ids.push(id);
+      this.idsByTreeNode.set(node, ids);
+    };
     interface DrawNode {
       x: number;
       depth: number;
@@ -436,16 +498,21 @@ export class TreeEditor {
       maxX = Math.max(maxX, x);
       const triangle = node.kind === "phrase" && isTriangleNode(node);
       const leaf = isLeaf(node) && !triangle;
-      if (parent) lines.push({ x1: parent.x ?? 0, y1: parent.depth ?? 0, x2: x, y2: depth, depth });
+      if (leaf) maxX = Math.max(maxX, x + LEAF_GAP / 2);
+      if (parent) {
+        lines.push({ x1: parent.x ?? 0, y1: parent.depth ?? 0, x2: x, y2: depth, depth });
+        this.parentByTreeNode.set(node, parent);
+      }
       const id = "n" + this.treeSpans.length;
       const raw = mapNodeToRaw(node, map);
       this.treeSpans.push({ start: raw.start, end: raw.end, id });
+      addId(node, id);
       nodes.push({
         x,
         depth,
         leaf,
         label: node.kind === "phrase" ? node.label : "",
-        text: node.kind === "leaf" ? node.text : "",
+        text: node.kind === "leaf" ? stripQuotes(node.text) : "",
         start: raw.start,
         end: raw.end,
         id,
@@ -462,7 +529,17 @@ export class TreeEditor {
         const rawSpan = mapNodeToRaw({ ...first, end: last.end }, map);
         const tid = "n" + this.treeSpans.length;
         this.treeSpans.push({ start: rawSpan.start, end: rawSpan.end, id: tid });
-        nodes.push({ x, depth: baseDepth, leaf: true, label: "", text: collectWords(node).join(" "), start: rawSpan.start, end: rawSpan.end, id: tid });
+        addId(node, tid);
+        nodes.push({
+          x,
+          depth: baseDepth,
+          leaf: true,
+          label: "",
+          text: collectWords(node).map(stripQuotes).join(" "),
+          start: rawSpan.start,
+          end: rawSpan.end,
+          id: tid,
+        });
         return;
       }
       if (!leaf && node.kind === "phrase") for (const c of node.children) walk(c, node);
@@ -510,8 +587,8 @@ export class TreeEditor {
     for (const n of nodes) {
       const colorCls = simple ? (n.leaf ? "simple-leaf" : "simple-node") : "d" + (n.depth % 5);
       const cls = (n.leaf ? "leaf" : "label") + " " + colorCls;
-      const label = n.leaf ? n.text : n.label || "∅";
-      svg += `<text id="${n.id}" class="tree-node ${cls}" data-start="${n.start}" data-end="${n.end}" x="${n.x + PAD}" y="${n.depth * LEVEL_H + PAD}" text-anchor="middle" dominant-baseline="central">${escapeHtml(label)}</text>`;
+      const labelMarkup = n.leaf ? escapeHtml(n.text) : this.renderLabelMarkup(n.label || "∅");
+      svg += `<text id="${n.id}" class="tree-node ${cls}" data-start="${n.start}" data-end="${n.end}" x="${n.x + PAD}" y="${n.depth * LEVEL_H + PAD}" text-anchor="middle" dominant-baseline="central">${labelMarkup}</text>`;
     }
     svg += "</svg>";
     this.treeArea.innerHTML = svg;
@@ -531,16 +608,69 @@ export class TreeEditor {
     this.treeBadge.textContent = `${phraseCount} ${phraseCount === 1 ? "node" : "nodes"} · ${leafCount} ${leafCount === 1 ? "leaf" : "leaves"}`;
   }
 
+  private renderLabelMarkup(label: string): string {
+    const m = /^(.+)_([^_\s]+)$/.exec(label);
+    if (!m) return escapeHtml(label);
+    return `${escapeHtml(m[1])}<tspan dy="0.28em" font-size="0.72em">${escapeHtml(m[2])}</tspan>`;
+  }
+
+  // All nodes a sister of `node` dominates (plus the sisters themselves) —
+  // the standard c-command relation, since every node's parent here is the
+  // "first branching node" that dominates it.
+  private cCommanded(node: TreeNode): Set<TreeNode> {
+    const result = new Set<TreeNode>();
+    const parent = this.parentByTreeNode.get(node);
+    if (!parent || parent.kind !== "phrase") return result;
+    const collect = (n: TreeNode): void => {
+      result.add(n);
+      if (n.kind === "phrase") for (const c of n.children) collect(c);
+    };
+    for (const sibling of parent.children) {
+      if (sibling !== node) collect(sibling);
+    }
+    return result;
+  }
+
+  private dominated(node: TreeNode): Set<TreeNode> {
+    const result = new Set<TreeNode>();
+    const collect = (n: TreeNode): void => {
+      if (n.kind !== "phrase") return;
+      for (const c of n.children) {
+        result.add(c);
+        collect(c);
+      }
+    };
+    collect(node);
+    return result;
+  }
+
+  private addHighlightRect(svg: SVGSVGElement, el: SVGGraphicsElement, cls: string): void {
+    const box = el.getBBox();
+    const PAD_X = 6;
+    const PAD_Y = 0;
+    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    rect.setAttribute("class", cls);
+    rect.setAttribute("x", String(box.x - PAD_X));
+    rect.setAttribute("y", String(box.y - PAD_Y));
+    rect.setAttribute("width", String(box.width + PAD_X * 2));
+    rect.setAttribute("height", String(box.height + PAD_Y * 2));
+    rect.setAttribute("rx", "4");
+    svg.insertBefore(rect, svg.firstChild);
+  }
+
   private clearActiveHighlight(): void {
-    this.treeArea.querySelectorAll(".tree-node.active").forEach((el) => el.classList.remove("active"));
-    this.treeArea.querySelector(".tree-node-highlight")?.remove();
+    this.treeArea
+      .querySelectorAll(".tree-node.active, .tree-node.c-command, .tree-node.dominated")
+      .forEach((el) => el.classList.remove("active", "c-command", "dominated"));
+    this.treeArea
+      .querySelectorAll(".tree-node-highlight, .tree-c-command-highlight, .tree-dominance-highlight")
+      .forEach((el) => el.remove());
+    this.treeLegendEl.hidden = true;
   }
 
   private highlightActiveNode(): void {
     this.clearActiveHighlight();
-    // No caret to anchor a highlight to once focus has left the editor —
-    // otherwise a later re-render (e.g. clicking Auto-indent) would revive
-    // the highlight using a stale, no-longer-meaningful caret position.
+    if (!this.highlightsEnabled) return;
     if (document.activeElement !== this.ta) return;
     const caret = this.ta.selectionStart;
     let best: TreeSpan | null = null;
@@ -551,21 +681,32 @@ export class TreeEditor {
     }
     if (!best) return;
     const el = document.getElementById(best.id);
-    if (!el) return;
-    el.classList.add("active");
     const svg = this.treeArea.querySelector<SVGSVGElement>("svg.tree-svg");
-    if (!svg || !(el instanceof SVGGraphicsElement)) return;
-    const box = el.getBBox();
-    const PAD_X = 6;
-    const PAD_Y = 0;
-    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    rect.setAttribute("class", "tree-node-highlight");
-    rect.setAttribute("x", String(box.x - PAD_X));
-    rect.setAttribute("y", String(box.y - PAD_Y));
-    rect.setAttribute("width", String(box.width + PAD_X * 2));
-    rect.setAttribute("height", String(box.height + PAD_Y * 2));
-    rect.setAttribute("rx", "4");
-    svg.insertBefore(rect, svg.firstChild);
+    if (!el || !svg || !(el instanceof SVGGraphicsElement)) return;
+    el.classList.add("active");
+    this.addHighlightRect(svg, el, "tree-node-highlight");
+    this.treeLegendEl.hidden = false;
+
+    const activeNode = this.treeNodeById.get(best.id);
+    if (!activeNode) return;
+    for (const commanded of this.cCommanded(activeNode)) {
+      for (const id of this.idsByTreeNode.get(commanded) ?? []) {
+        const cEl = document.getElementById(id);
+        if (cEl instanceof SVGGraphicsElement) {
+          cEl.classList.add("c-command");
+          this.addHighlightRect(svg, cEl, "tree-c-command-highlight");
+        }
+      }
+    }
+    for (const dom of this.dominated(activeNode)) {
+      for (const id of this.idsByTreeNode.get(dom) ?? []) {
+        const dEl = document.getElementById(id);
+        if (dEl instanceof SVGGraphicsElement) {
+          dEl.classList.add("dominated");
+          this.addHighlightRect(svg, dEl, "tree-dominance-highlight");
+        }
+      }
+    }
   }
 
   // ---------- caret pixel position (for autocomplete) ----------
@@ -1055,7 +1196,12 @@ export class TreeEditor {
         cloneEl.removeAttribute("data-end");
       } else if (tag === "line" || tag === "path" || tag === "polygon") {
         cloneEl.setAttribute("stroke", cs.stroke);
-      } else if (tag === "rect" && liveEl.classList.contains("tree-node-highlight")) {
+      } else if (
+        tag === "rect" &&
+        (liveEl.classList.contains("tree-node-highlight") ||
+          liveEl.classList.contains("tree-c-command-highlight") ||
+          liveEl.classList.contains("tree-dominance-highlight"))
+      ) {
         cloneEl.setAttribute("fill", cs.fill);
         cloneEl.removeAttribute("class");
       }
@@ -1128,6 +1274,7 @@ export class TreeEditor {
   // canonical shape — useful after pasting in something messy. Fold state
   // can't survive a full rewrite (every offset changes), so it's cleared.
   private formatDocument(): void {
+    if (this.folds.length > 0) return;
     const value = this.ta.value;
     const scan = scanBrackets(value);
     if (!scan.balanced) return;

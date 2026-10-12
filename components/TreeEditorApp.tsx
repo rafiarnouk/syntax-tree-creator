@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { TreeEditor } from "@/lib/tree-editor/editor";
+import { DownloadIcon, HighlighterIcon, MoonIcon, SearchIcon, SunIcon } from "@/components/icons";
 
 // TreeEditor is a vanilla DOM controller, not a React component — it owns
 // this subtree's DOM directly (overlay/gutter/tree innerHTML, cursor
@@ -32,10 +33,10 @@ export default function TreeEditorApp() {
         <div className="header-controls">
           <div className="style-toggle" id="themeToggle" role="group" aria-label="Color theme">
             <button type="button" className="style-btn" data-theme-choice="light">
-              Light
+              <SunIcon /> Light
             </button>
             <button type="button" className="style-btn" data-theme-choice="dark">
-              Dark
+              <MoonIcon /> Dark
             </button>
           </div>
           <button className="reset-btn" id="resetBtn" type="button">
@@ -86,6 +87,9 @@ export default function TreeEditorApp() {
                   Fancy
                 </button>
               </div>
+              <span className="zoom-label" aria-hidden="true">
+                <SearchIcon />
+              </span>
               <div className="zoom-toggle" id="zoomControls" role="group" aria-label="Zoom">
                 <button type="button" className="zoom-btn" id="zoomOutBtn" aria-label="Zoom out">
                   −
@@ -102,16 +106,36 @@ export default function TreeEditorApp() {
               </div>
               <div className="style-toggle" id="exportControls" role="group" aria-label="Save tree as an image">
                 <button type="button" className="style-btn" id="exportPngBtn" title="Save as PNG">
-                  PNG
+                  <DownloadIcon /> PNG
                 </button>
                 <button type="button" className="style-btn" id="exportSvgBtn" title="Save as SVG">
-                  SVG
+                  <DownloadIcon /> SVG
                 </button>
               </div>
+              <button
+                type="button"
+                className="highlight-toggle-btn"
+                id="highlightToggleBtn"
+                aria-pressed="true"
+                title="Disable node highlighting"
+              >
+                <HighlighterIcon />
+              </button>
               <span className="badge" id="treeBadge" />
             </div>
           </div>
           <div className="tree-area" id="treeArea" />
+          <div className="tree-legend" id="treeLegend" hidden>
+            <span className="swatch">
+              <span className="dot selected" /> Selected node
+            </span>
+            <span className="swatch">
+              <span className="dot ccommand" /> C-commanded nodes
+            </span>
+            <span className="swatch">
+              <span className="dot dominance" /> Dominated nodes
+            </span>
+          </div>
         </section>
       </div>
 

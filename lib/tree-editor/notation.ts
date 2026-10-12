@@ -6,7 +6,7 @@ export const INDENT_UNIT = "    "; // 4 spaces per nesting level
 
 export function tokenize(text: string): Token[] {
   const tokens: Token[] = [];
-  const re = /\[|\]|[^[\]\s]+/g;
+  const re = /\[|\]|"[^"]*"|[^[\]\s]+/g; // a quoted phrase is one token even with spaces inside
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     const t = m[0];
@@ -61,9 +61,21 @@ export function isLeaf(node: TreeNode): boolean {
 }
 
 // A phrase whose content is bare words with no sub-brackets, e.g. "[VP chased the cat]" —
-// drawn as a triangle over the full string rather than three separate branches.
+// drawn as a triangle over the full string rather than three separate branches. A single
+// quoted leaf, e.g. [DP "boy"], is also a triangle regardless of word count.
 export function isTriangleNode(node: TreeNode): boolean {
-  return node.kind === "phrase" && node.children.length >= 2 && node.children.every((c) => c.kind === "leaf");
+  if (node.kind !== "phrase") return false;
+  if (node.children.length >= 2 && node.children.every((c) => c.kind === "leaf")) return true;
+  const only = node.children[0];
+  return node.children.length === 1 && only.kind === "leaf" && isQuoted(only.text);
+}
+
+function isQuoted(text: string): boolean {
+  return /^"[\s\S]*"$/.test(text);
+}
+
+export function stripQuotes(text: string): string {
+  return isQuoted(text) ? text.slice(1, -1) : text;
 }
 
 // Rebuilds a node's text in the same canonical shape the editor itself
