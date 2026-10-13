@@ -7,6 +7,7 @@
 import { THEME_KEY } from "./editor";
 import { layoutForest } from "./merge-layout";
 import { buildPreview, collectWords, isLeaf, isTriangleNode, stripQuotes } from "./notation";
+import { buildExportSvg } from "./svg-export";
 import type { LeafNode, PhraseNode, TreeNode } from "./types";
 import { escapeHtml } from "./utils";
 
@@ -27,13 +28,17 @@ const SAMPLE_WORDS: { label: string; content: string }[] = [
   { label: "N", content: "cat" },
 ];
 
-// A plain six-dot grip, inlined rather than imported from components/icons.tsx
-// since this chip markup is built as an HTML string, not JSX.
+// A plain six-dot grip and a converging-lines "merge" glyph, inlined rather
+// than imported from components/icons.tsx since this markup is built as an
+// HTML string, not JSX.
 const GRIP_SVG =
   '<svg width="9" height="13" viewBox="0 0 9 13" fill="currentColor" aria-hidden="true">' +
   '<circle cx="1.5" cy="1.5" r="1.3"/><circle cx="7.5" cy="1.5" r="1.3"/>' +
   '<circle cx="1.5" cy="6.5" r="1.3"/><circle cx="7.5" cy="6.5" r="1.3"/>' +
   '<circle cx="1.5" cy="11.5" r="1.3"/><circle cx="7.5" cy="11.5" r="1.3"/></svg>';
+const MERGE_SVG =
+  '<svg width="12" height="10" viewBox="0 0 12 10" fill="none" stroke="currentColor" stroke-width="1.6" ' +
+  'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 1 L6 6 L11 1"/><path d="M6 6 L6 9.5"/></svg>';
 
 export class MergeBuilder {
   private themeToggleEl: HTMLElement;
@@ -171,6 +176,14 @@ export class MergeBuilder {
     return !phrase.label.trim() && !leaf.text.trim();
   }
 
+  // 0 for a still-basic leaf, +1 each time it's absorbed into a merge — the
+  // same reasoning as the depth-based fancy-mode coloring in the top-down
+  // tool, just counted from the leaves up instead of from a root down.
+  private mergeHeight(node: TreeNode): number {
+    if (this.isBasic(node) || node.kind !== "phrase") return 0;
+    return 1 + Math.max(...node.children.map((c) => this.mergeHeight(c)));
+  }
+
   private glossOf(node: TreeNode): string {
     if (node.kind === "leaf") return node.text || "…";
     const words = collectWords(node);
@@ -282,24 +295,35 @@ export class MergeBuilder {
   // ---------- tray rendering ----------
 
   private updateHint(): void {
-    if (this.picked.length === 0) this.hintEl.textContent = "Click a chip, then a neighboring chip, to merge them into a bigger node.";
+    if (this.picked.length === 0) this.hintEl.textContent = "Click a node and then its neighbor to merge them, or press the merge button between them.";
     else if (this.picked.length === 1) this.hintEl.textContent = "Now click the highlighted neighbor to merge with it — or press Esc to cancel.";
     else this.hintEl.textContent = "Type a label for the merged node below, then Merge.";
   }
 
   private renderTray(): void {
-    const parts: string[] = [this.renderInsertBtn(0)];
+    const parts: string[] = [this.renderEdgeInsertBtn(0)];
     this.forest.forEach((node, i) => {
       parts.push(this.renderChip(node, i));
-      parts.push(this.renderInsertBtn(i + 1));
+      parts.push(i < this.forest.length - 1 ? this.renderGapControl(i) : this.renderEdgeInsertBtn(i + 1));
     });
     this.tray.innerHTML = parts.join("");
     this.trayBadge.textContent = `${this.forest.length} ${this.forest.length === 1 ? "node" : "nodes"}`;
     this.updateHint();
   }
 
-  private renderInsertBtn(at: number): string {
+  // The two ends of the tray only ever border one node, so there's nothing
+  // to merge there — just an insert point.
+  private renderEdgeInsertBtn(at: number): string {
     return `<button type="button" class="mb-insert-btn" data-action="insert-leaf" data-at="${at}" title="Add a leaf here" aria-label="Add a leaf here" tabindex="-1">+</button>`;
+  }
+
+  // Between two existing nodes: a merge button on top, an insert point below.
+  private renderGapControl(leftIdx: number): string {
+    return `
+      <span class="mb-gap">
+        <button type="button" class="mb-gap-merge" data-action="merge-pair" data-idx="${leftIdx}" title="Merge these two nodes" aria-label="Merge these two nodes" tabindex="-1">${MERGE_SVG}</button>
+        <button type="button" class="mb-gap-insert" data-action="insert-leaf" data-at="${leftIdx + 1}" title="Add a leaf here" aria-label="Add a leaf here" tabindex="-1">+</button>
+      </span>`;
   }
 
   private renderChip(node: TreeNode, i: number): string {
@@ -307,12 +331,14 @@ export class MergeBuilder {
     if (this.picked.includes(i)) classes.push("picked");
     else if (this.picked.length === 1) classes.push(Math.abs(i - this.picked[0]) === 1 ? "candidate" : "dim");
     const grip = `<span class="mb-chip-grip" draggable="true" title="Drag to reorder">${GRIP_SVG}</span>`;
+    const depthIdx = this.mergeHeight(node) % 5;
+    const colorStyle = ` style="--node-color: var(--depth-${depthIdx}); --node-color-rgb: var(--depth-${depthIdx}-rgb)"`;
 
     if (this.isBasic(node)) {
       const phrase = node as PhraseNode;
       const leaf = phrase.children[0] as LeafNode;
       return `
-        <span class="${classes.join(" ")}" data-idx="${i}">
+        <span class="${classes.join(" ")}" data-idx="${i}"${colorStyle}>
           ${grip}
           <input type="text" class="mb-chip-field mb-chip-label-field" data-field="label" data-idx="${i}" placeholder="Label" value="${escapeHtml(phrase.label)}" />
           <input type="text" class="mb-chip-field mb-chip-content-field" data-field="content" data-idx="${i}" placeholder="Content" value="${escapeHtml(leaf.text)}" />
@@ -324,7 +350,7 @@ export class MergeBuilder {
     const preview = words.length ? buildPreview(words) : "…";
     const label = node.kind === "phrase" ? node.label || "…" : "";
     return `
-      <span class="${classes.join(" ")} mb-chip-merged" data-idx="${i}">
+      <span class="${classes.join(" ")} mb-chip-merged" data-idx="${i}"${colorStyle}>
         ${grip}
         <span class="mb-chip-gloss"><b>${escapeHtml(label)}</b> ${escapeHtml(preview)}</span>
         <button type="button" class="reset-btn" data-action="unlink" data-idx="${i}" title="Undo this merge" tabindex="-1">Unlink</button>
@@ -638,6 +664,13 @@ export class MergeBuilder {
           case "unlink":
             this.unlink(idx);
             break;
+          case "merge-pair":
+            if (idx + 1 < this.forest.length) {
+              this.picked = [idx, idx + 1];
+              this.renderTray();
+              this.syncMergeBar();
+            }
+            break;
         }
         return;
       }
@@ -728,55 +761,6 @@ export class MergeBuilder {
 
   // ---------- export (mirrors TreeEditor's, against this.canvas) ----------
 
-  private getExportSvg(): SVGSVGElement | null {
-    const live = this.canvas.querySelector<SVGSVGElement>(".tree-svg");
-    if (!live) return null;
-    const clone = live.cloneNode(true) as SVGSVGElement;
-    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-
-    const liveEls = Array.from(live.querySelectorAll<SVGElement>("*"));
-    const cloneEls = Array.from(clone.querySelectorAll<SVGElement>("*"));
-    liveEls.forEach((liveEl, i) => {
-      const cloneEl = cloneEls[i];
-      const cs = getComputedStyle(liveEl);
-      const tag = liveEl.tagName.toLowerCase();
-      if (tag === "text") {
-        cloneEl.setAttribute("fill", cs.fill);
-        cloneEl.setAttribute("font-family", cs.fontFamily);
-        cloneEl.setAttribute("font-style", cs.fontStyle);
-        cloneEl.setAttribute("font-weight", cs.fontWeight);
-        cloneEl.setAttribute("font-size", cs.fontSize);
-        cloneEl.removeAttribute("class");
-        cloneEl.removeAttribute("id");
-      } else if (tag === "line" || tag === "path" || tag === "polygon") {
-        cloneEl.setAttribute("stroke", cs.stroke);
-      } else if (
-        tag === "rect" &&
-        (liveEl.classList.contains("tree-node-highlight") ||
-          liveEl.classList.contains("tree-c-command-highlight") ||
-          liveEl.classList.contains("tree-dominance-highlight"))
-      ) {
-        cloneEl.setAttribute("fill", cs.fill);
-        cloneEl.removeAttribute("class");
-      }
-    });
-
-    const viewBox = (clone.getAttribute("viewBox") || "0 0 0 0").split(" ").map(Number);
-    const w = viewBox[2] || 0;
-    const h = viewBox[3] || 0;
-    clone.setAttribute("width", String(w));
-    clone.setAttribute("height", String(h));
-
-    const bg = getComputedStyle(document.documentElement).getPropertyValue("--surface").trim() || "#fff";
-    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    rect.setAttribute("width", String(w));
-    rect.setAttribute("height", String(h));
-    rect.setAttribute("fill", bg);
-    clone.insertBefore(rect, clone.firstChild);
-
-    return clone;
-  }
-
   private triggerDownload(blob: Blob, filename: string): void {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -788,16 +772,18 @@ export class MergeBuilder {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  private exportSvg(): void {
-    const svg = this.getExportSvg();
-    if (!svg) return;
+  private async exportSvg(): Promise<void> {
+    const live = this.canvas.querySelector<SVGSVGElement>(".tree-svg");
+    if (!live) return;
+    const svg = await buildExportSvg(live);
     const markup = '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(svg);
     this.triggerDownload(new Blob([markup], { type: "image/svg+xml" }), "syntax-tree-merge.svg");
   }
 
-  private exportPng(): void {
-    const svg = this.getExportSvg();
-    if (!svg) return;
+  private async exportPng(): Promise<void> {
+    const live = this.canvas.querySelector<SVGSVGElement>(".tree-svg");
+    if (!live) return;
+    const svg = await buildExportSvg(live);
     const w = parseFloat(svg.getAttribute("width") || "0");
     const h = parseFloat(svg.getAttribute("height") || "0");
     if (!w || !h) return;

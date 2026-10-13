@@ -19,6 +19,11 @@
   --depth-2: #d97706;
   --depth-3: #db2777;
   --depth-4: #7c3aed;
+  --depth-0-rgb: 47, 95, 214;
+  --depth-1-rgb: 14, 159, 110;
+  --depth-2-rgb: 217, 119, 6;
+  --depth-3-rgb: 219, 39, 119;
+  --depth-4-rgb: 124, 58, 237;
   --shadow: 0 1px 2px rgba(27, 34, 51, 0.06), 0 10px 28px rgba(27, 34, 51, 0.08);
   --line-h: 23px;
   --panel-h: 70vh;
@@ -47,6 +52,11 @@
     --depth-2: #fbbf24;
     --depth-3: #f472b6;
     --depth-4: #a78bfa;
+    --depth-0-rgb: 124, 147, 255;
+    --depth-1-rgb: 52, 211, 153;
+    --depth-2-rgb: 251, 191, 36;
+    --depth-3-rgb: 244, 114, 182;
+    --depth-4-rgb: 167, 139, 250;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 10px 28px rgba(0, 0, 0, 0.45);
   }
 }
@@ -72,6 +82,11 @@
   --depth-2: #fbbf24;
   --depth-3: #f472b6;
   --depth-4: #a78bfa;
+  --depth-0-rgb: 124, 147, 255;
+  --depth-1-rgb: 52, 211, 153;
+  --depth-2-rgb: 251, 191, 36;
+  --depth-3-rgb: 244, 114, 182;
+  --depth-4-rgb: 167, 139, 250;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 10px 28px rgba(0, 0, 0, 0.45);
 }
 
@@ -657,6 +672,11 @@ pre .indent-guide {
 .tree-node.active {
   font-weight: 700;
 }
+.tree-node-highlight,
+.tree-c-command-highlight,
+.tree-dominance-highlight {
+  animation: pop-fade-in 0.15s ease;
+}
 .tree-node-highlight {
   fill: var(--highlight);
 }
@@ -667,6 +687,7 @@ pre .indent-guide {
   fill: var(--dominance);
 }
 .tree-legend {
+  animation: legend-in 0.18s ease;
   position: absolute;
   left: 50%;
   bottom: 12px;
@@ -750,17 +771,22 @@ pre .indent-guide {
   align-items: center;
   gap: 6px;
   padding: 7px 8px;
-  border: 1px solid var(--border);
+  border: 1px solid rgba(var(--node-color-rgb, var(--accent-rgb)), 0.45);
+  border-left: 4px solid var(--node-color, var(--border));
   border-radius: 10px;
-  background: var(--surface-2);
+  background: rgba(var(--node-color-rgb, var(--accent-rgb)), 0.12);
   cursor: pointer;
 }
+/* Selection state is shown with outline + lift, never color — the chip's
+   own depth color stays as-is, so a pick never gets lost in (or mistaken
+   for) a same-hued chip. */
 .mb-chip.picked {
-  background: rgba(var(--accent-rgb), 0.16);
-  border-color: var(--accent);
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
 }
 .mb-chip.candidate {
-  border: 1.5px dashed var(--accent);
+  outline: 2px dashed var(--muted);
+  outline-offset: 2px;
 }
 .mb-chip.dim {
   opacity: 0.4;
@@ -811,7 +837,7 @@ pre .indent-guide {
   width: 7em;
 }
 .mb-chip-merged {
-  background: var(--surface-3);
+  background: rgba(var(--node-color-rgb, var(--accent-rgb)), 0.24);
 }
 .mb-chip-gloss {
   font-size: 0.85rem;
@@ -862,7 +888,7 @@ pre .indent-guide {
 .mb-insert-btn {
   font: inherit;
   font-size: 12px;
-  width: 18px;
+  width: 22px;
   align-self: stretch;
   padding: 0;
   border: 1.5px dashed var(--border);
@@ -877,6 +903,34 @@ pre .indent-guide {
   color: var(--accent);
   opacity: 1;
 }
+.mb-gap {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  width: 22px;
+  gap: 2px;
+}
+.mb-gap-merge,
+.mb-gap-insert {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1.5px dashed var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0.55;
+}
+.mb-gap-merge:hover,
+.mb-gap-insert:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  opacity: 1;
+}
 .mb-merge-bar {
   display: flex;
   align-items: center;
@@ -885,6 +939,7 @@ pre .indent-guide {
   padding: 10px 14px;
   border-bottom: 1px solid var(--border);
   background: var(--surface-2);
+  animation: bar-in 0.16s ease;
 }
 .mb-merge-gloss {
   font-family: var(--font-ibm-plex-mono), monospace;
@@ -914,6 +969,122 @@ pre .indent-guide {
 .mb-merge-input:focus {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
+}
+
+/* ---------- smoothing ----------
+   Most of the tree/tray UI is rebuilt wholesale via innerHTML on every
+   change (see README.md on why TreeEditor/MergeBuilder are vanilla DOM
+   controllers, not React) — a freshly-created element has no prior state
+   for a CSS `transition` to animate from. So two different techniques,
+   picked per case rather than one library applied uniformly:
+   - `transition` on elements React (or classList.toggle on a persisting
+     node) actually updates in place — buttons, inputs, theme/style toggles.
+   - a `fade-in`/etc. `animation`, which plays on ANY element the moment
+     it's created — the only thing that can smooth content that's torn
+     down and rebuilt every render, like the legend or highlight rects.
+   Scoped to elements that only change on discrete actions (clicks), never
+   on something that fires every keystroke — typing must stay instant, and
+   never on the tray's chips — those rebuild on every selection change
+   too (picked/candidate/dim), not just structural ones, so an entrance
+   animation there replays on every click and fights with those states
+   (a chip about to end up dimmed would flash at full opacity first). */
+
+@keyframes pop-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes legend-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 6px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+@keyframes bar-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes app-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.app:not([hidden]) {
+  animation: app-in 0.2s ease;
+}
+
+body,
+.panel,
+.panel-head,
+.ref-row,
+.status-line,
+.gutter,
+.editor-scroll textarea,
+.editor-scroll pre,
+header,
+footer {
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.reset-btn,
+.style-btn,
+.zoom-btn,
+.mb-mini-btn,
+.mb-insert-btn,
+.mb-gap-merge,
+.mb-gap-insert,
+.mb-chip-grip,
+.mb-chip-field,
+.mb-chip,
+.fold-btn,
+.mode-switch-tab,
+.ac-item,
+kbd {
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease,
+    transform 0.1s ease,
+    box-shadow 0.15s ease;
+}
+
+.reset-btn:active:not(:disabled),
+.style-btn:active:not(:disabled),
+.zoom-btn:active:not(:disabled),
+.mb-mini-btn:active:not(:disabled),
+.mb-insert-btn:active,
+.mb-gap-merge:active,
+.mb-gap-insert:active,
+.mode-switch-tab:active {
+  transform: scale(0.93);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
 }
 
 footer {

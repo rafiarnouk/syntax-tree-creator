@@ -16,6 +16,7 @@ import {
   tokenize,
 } from "./notation";
 import { layout, LEAF_GAP } from "./layout";
+import { buildExportSvg } from "./svg-export";
 import type { BracketScan, FoldableNode, FoldRecord, LabelOption, MatchSet, TreeNode } from "./types";
 import { escapeHtml, lineOf } from "./utils";
 
@@ -993,10 +994,20 @@ export class TreeEditor {
     const closeLine = value.slice(closeLineStart, this.lineEndOf(value, closeLineStart));
     if (/^\s*\]/.test(closeLine)) {
       // reuse an already-blank line right before the closing bracket, if
-      // there is one, instead of adding a redundant second one
+      // there is one, instead of adding a redundant second one — unless the
+      // cursor is already sitting in that empty slot, meaning there's
+      // nothing to fill in and advance() was pressed again: drop the slot
+      // and open a sibling for this node's own parent instead, so an
+      // unused trailing child slot can't trap the cursor one level too deep
       const prevLineEnd = Math.max(0, closeLineStart - 1);
       const prevLineStart = value.lastIndexOf("\n", prevLineEnd - 1) + 1;
       if (closeLineStart > 0 && value.slice(prevLineStart, prevLineEnd).trim() === "") {
+        if (pos >= prevLineStart && pos <= prevLineEnd) {
+          const removed = closeLineStart - prevLineStart;
+          const newVal = value.slice(0, prevLineStart) + value.slice(closeLineStart);
+          this.placeSiblingSlot(newVal, enclosing.closeIdx - removed + 1);
+          return;
+        }
         this.setValue(value, prevLineEnd);
         return;
       }
@@ -1167,62 +1178,6 @@ export class TreeEditor {
 
   // ---------- export ----------
 
-  // A standalone copy of the live tree SVG: colors and fonts currently come
-  // from CSS custom properties and an external stylesheet, neither of which
-  // exist in a file opened outside this page, so every value gets resolved
-  // and baked in as a plain attribute. Sized to the tree's natural extent,
-  // ignoring the on-screen zoom level.
-  private getExportSvg(): SVGSVGElement | null {
-    const live = this.treeArea.querySelector<SVGSVGElement>(".tree-svg");
-    if (!live) return null;
-    const clone = live.cloneNode(true) as SVGSVGElement;
-    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-
-    const liveEls = Array.from(live.querySelectorAll<SVGElement>("*"));
-    const cloneEls = Array.from(clone.querySelectorAll<SVGElement>("*"));
-    liveEls.forEach((liveEl, i) => {
-      const cloneEl = cloneEls[i];
-      const cs = getComputedStyle(liveEl);
-      const tag = liveEl.tagName.toLowerCase();
-      if (tag === "text") {
-        cloneEl.setAttribute("fill", cs.fill);
-        cloneEl.setAttribute("font-family", cs.fontFamily);
-        cloneEl.setAttribute("font-style", cs.fontStyle);
-        cloneEl.setAttribute("font-weight", cs.fontWeight);
-        cloneEl.setAttribute("font-size", cs.fontSize);
-        cloneEl.removeAttribute("class");
-        cloneEl.removeAttribute("id");
-        cloneEl.removeAttribute("data-start");
-        cloneEl.removeAttribute("data-end");
-      } else if (tag === "line" || tag === "path" || tag === "polygon") {
-        cloneEl.setAttribute("stroke", cs.stroke);
-      } else if (
-        tag === "rect" &&
-        (liveEl.classList.contains("tree-node-highlight") ||
-          liveEl.classList.contains("tree-c-command-highlight") ||
-          liveEl.classList.contains("tree-dominance-highlight"))
-      ) {
-        cloneEl.setAttribute("fill", cs.fill);
-        cloneEl.removeAttribute("class");
-      }
-    });
-
-    const viewBox = (clone.getAttribute("viewBox") || "0 0 0 0").split(" ").map(Number);
-    const w = viewBox[2] || 0;
-    const h = viewBox[3] || 0;
-    clone.setAttribute("width", String(w));
-    clone.setAttribute("height", String(h));
-
-    const bg = getComputedStyle(document.documentElement).getPropertyValue("--surface").trim() || "#fff";
-    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    rect.setAttribute("width", String(w));
-    rect.setAttribute("height", String(h));
-    rect.setAttribute("fill", bg);
-    clone.insertBefore(rect, clone.firstChild);
-
-    return clone;
-  }
-
   private triggerDownload(blob: Blob, filename: string): void {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1234,16 +1189,18 @@ export class TreeEditor {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  private exportSvg(): void {
-    const svg = this.getExportSvg();
-    if (!svg) return;
+  private async exportSvg(): Promise<void> {
+    const live = this.treeArea.querySelector<SVGSVGElement>(".tree-svg");
+    if (!live) return;
+    const svg = await buildExportSvg(live);
     const markup = '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(svg);
     this.triggerDownload(new Blob([markup], { type: "image/svg+xml" }), "syntax-tree.svg");
   }
 
-  private exportPng(): void {
-    const svg = this.getExportSvg();
-    if (!svg) return;
+  private async exportPng(): Promise<void> {
+    const live = this.treeArea.querySelector<SVGSVGElement>(".tree-svg");
+    if (!live) return;
+    const svg = await buildExportSvg(live);
     const w = parseFloat(svg.getAttribute("width") || "0");
     const h = parseFloat(svg.getAttribute("height") || "0");
     if (!w || !h) return;

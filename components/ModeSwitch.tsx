@@ -24,7 +24,7 @@ export default function ModeSwitch({ mode, onChange }: { mode: BuilderMode; onCh
           onClick={() => onChange("bottomup")}
         >
           <span className="mode-switch-title">Bottom-up</span>
-          <span className="mode-switch-desc">Merge leaf chips into bigger nodes</span>
+          <span className="mode-switch-desc">Merge leaf nodes into bigger ones</span>
         </button>
       </div>
     </div>

@@ -22,7 +22,7 @@ export default function MergeBuilderApp({ hidden }: { hidden?: boolean }) {
         <div>
           <h1>Syntax Tree Creator</h1>
           <p className="tagline">
-            Build a tree bottom-up: add leaves to the tray, pick two neighboring chips and <b>Merge</b> them into a
+            Build a tree bottom-up: add leaves to the tray, pick two neighboring nodes and <b>Merge</b> them into a
             bigger node, again and again, until one remains.
           </p>
         </div>
@@ -107,7 +107,7 @@ export default function MergeBuilderApp({ hidden }: { hidden?: boolean }) {
 
       <footer>
         <div className="shortcuts">
-          Drag the grip to reorder a chip · <kbd>Tab</kbd>/<kbd>Enter</kbd> move through label and content fields ·
+          Drag the grip to reorder a node · <kbd>Tab</kbd>/<kbd>Enter</kbd> move through label and content fields ·
           click a tree node to inspect it
         </div>
       </footer>
