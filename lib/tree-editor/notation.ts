@@ -109,7 +109,7 @@ export function scanBrackets(text: string): BracketScan {
     } else if (ch === "]") {
       if (stack.length === 0) {
         brackets.push({ index: i, type: "close" });
-        errors.push({ index: i, message: 'Unexpected "]" — no matching "[" before it.' });
+        errors.push({ index: i, message: 'Unexpected "]": no matching "[" before it.' });
       } else {
         const openIdx = stack.pop()!;
         brackets[openIdx].pairIndex = brackets.length;
@@ -118,7 +118,7 @@ export function scanBrackets(text: string): BracketScan {
     }
   }
   for (const openIdx of stack) {
-    errors.push({ index: brackets[openIdx].index, message: 'Unclosed "[" — missing a matching "]".' });
+    errors.push({ index: brackets[openIdx].index, message: 'Unclosed "[": missing a matching "]".' });
   }
   return { brackets, errors, balanced: errors.length === 0 };
 }

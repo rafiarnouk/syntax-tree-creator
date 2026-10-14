@@ -17,6 +17,7 @@ import {
 } from "./notation";
 import { layout, LEAF_GAP } from "./layout";
 import { buildExportSvg } from "./svg-export";
+import { bindThemeToggle } from "./theme";
 import type { BracketScan, FoldableNode, FoldRecord, LabelOption, MatchSet, TreeNode } from "./types";
 import { escapeHtml, lineOf } from "./utils";
 
@@ -24,7 +25,6 @@ const UNIT = INDENT_UNIT;
 const DRAFT_KEY = "syntax-tree-creator-draft";
 const FOLDS_KEY = "syntax-tree-creator-folds";
 const STYLE_KEY = "syntax-tree-creator-style";
-export const THEME_KEY = "syntax-tree-creator-theme";
 const REF_KEY = "syntax-tree-creator-reference";
 const HIGHLIGHTS_KEY = "syntax-tree-creator-highlights";
 const ZOOM_MIN = 0.25;
@@ -32,7 +32,6 @@ const ZOOM_MAX = 2.5;
 const ZOOM_STEP = 1.2;
 
 type TreeStyle = "simple" | "fancy";
-type ThemeChoice = "light" | "dark";
 
 // Typed text gets checked against this as you go; a matching trigger right
 // before the cursor is replaced with its symbol.
@@ -44,7 +43,7 @@ const SHORTCUTS: Record<string, string> = {
 const AUTOCOMPLETE_ENABLED = false;
 
 const FORMAT_BTN_TITLE = "Reformat to the standard indentation (collapses leaves, expands everything else)";
-const FORMAT_BTN_FOLDED_TITLE = "Auto-indent is disabled while a node is collapsed — expand it first";
+const FORMAT_BTN_FOLDED_TITLE = "Auto-indent is disabled while a node is collapsed. Expand it first.";
 
 const LABELS: LabelOption[] = [
   { key: "S", desc: "Sentence" },
@@ -117,7 +116,6 @@ export class TreeEditor {
   private folds: FoldRecord[] = [];
   private prevValue = "";
   private treeStyle: TreeStyle = "simple";
-  private theme: ThemeChoice = "light";
   private zoom = 1;
   private fitRequested = false;
   private highlightsEnabled = true;
@@ -170,12 +168,6 @@ export class TreeEditor {
       /* private browsing / storage disabled */
     }
     try {
-      const savedTheme = localStorage.getItem(THEME_KEY);
-      if (savedTheme === "light" || savedTheme === "dark") this.theme = savedTheme;
-    } catch {
-      /* private browsing / storage disabled */
-    }
-    try {
       this.refInput.value = localStorage.getItem(REF_KEY) || "";
     } catch {
       /* private browsing / storage disabled */
@@ -190,7 +182,7 @@ export class TreeEditor {
     this.ta.value = saved || "";
     this.prevValue = this.ta.value;
     this.renderStyleToggle();
-    this.applyTheme();
+    bindThemeToggle(this.themeToggleEl);
     this.applyHighlightToggle();
     this.update();
     this.ta.setSelectionRange(this.ta.value.length, this.ta.value.length);
@@ -229,19 +221,6 @@ export class TreeEditor {
       this.update();
     });
 
-    this.themeToggleEl.addEventListener("click", (e) => {
-      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(".style-btn");
-      const choice = btn?.getAttribute("data-theme-choice");
-      if (choice !== "light" && choice !== "dark") return;
-      this.theme = choice;
-      this.applyTheme();
-      try {
-        localStorage.setItem(THEME_KEY, choice);
-      } catch {
-        /* private browsing / storage disabled */
-      }
-    });
-
     this.highlightToggleBtn.addEventListener("click", () => {
       this.highlightsEnabled = !this.highlightsEnabled;
       this.applyHighlightToggle();
@@ -263,13 +242,6 @@ export class TreeEditor {
   private renderStyleToggle(): void {
     this.styleToggleEl.querySelectorAll<HTMLButtonElement>(".style-btn").forEach((btn) => {
       btn.classList.toggle("active", btn.getAttribute("data-style") === this.treeStyle);
-    });
-  }
-
-  private applyTheme(): void {
-    document.documentElement.setAttribute("data-theme", this.theme);
-    this.themeToggleEl.querySelectorAll<HTMLButtonElement>(".style-btn").forEach((btn) => {
-      btn.classList.toggle("active", btn.getAttribute("data-theme-choice") === this.theme);
     });
   }
 
@@ -304,7 +276,7 @@ export class TreeEditor {
     let foldable: FoldableNode[] = [];
     if (!text.trim()) {
       this.showTreeMessage(
-        'Press <kbd>[</kbd> in the editor to start a node — a <b>label</b> slot and a <b>content</b> slot will appear for you to fill in.',
+        'Press <kbd>[</kbd> in the editor to start a node. A <b>label</b> slot and a <b>content</b> slot will appear for you to fill in.',
       );
     } else if (!scan.balanced) {
       this.showTreeMessage("Fix the bracket error below the editor to see the tree.");

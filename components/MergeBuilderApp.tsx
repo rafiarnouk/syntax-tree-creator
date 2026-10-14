@@ -22,8 +22,8 @@ export default function MergeBuilderApp({ hidden }: { hidden?: boolean }) {
         <div>
           <h1>Syntax Tree Creator</h1>
           <p className="tagline">
-            Build a tree bottom-up: add leaves to the tray, pick two neighboring nodes and <b>Merge</b> them into a
-            bigger node, again and again, until one remains.
+            Build a tree bottom-up: lay out the words as leaves, then drag each node onto its neighbor to merge them,
+            again and again, until one remains.
           </p>
         </div>
         <div className="header-controls">
@@ -44,9 +44,7 @@ export default function MergeBuilderApp({ hidden }: { hidden?: boolean }) {
       <section className="panel mb-tray-panel">
         <div className="panel-head">
           <span className="label">Leaves &amp; nodes</span>
-          <div className="tree-controls">
-            <span className="badge" id="mbTrayBadge" />
-          </div>
+          <span className="badge" id="mbTrayBadge" />
         </div>
         <div className="ref-row">
           <label htmlFor="mbRefSentence" className="ref-label">
@@ -57,9 +55,8 @@ export default function MergeBuilderApp({ hidden }: { hidden?: boolean }) {
             Split into leaves
           </button>
         </div>
-        <div className="mb-hint" id="mbHint" />
-        <div className="mb-merge-bar" id="mbMergeBar" hidden />
         <div className="mb-tray" id="mbTray" />
+        <div className="mb-hint" id="mbHint" />
       </section>
 
       <section className="panel mb-tree-panel">
@@ -107,8 +104,8 @@ export default function MergeBuilderApp({ hidden }: { hidden?: boolean }) {
 
       <footer>
         <div className="shortcuts">
-          Drag the grip to reorder a node · <kbd>Tab</kbd>/<kbd>Enter</kbd> move through label and content fields ·
-          click a tree node to inspect it
+          Drag a node onto its neighbor to merge, or between nodes to move it · <kbd>Esc</kbd> cancels ·{" "}
+          <kbd>Tab</kbd>/<kbd>Enter</kbd> move through label and content fields · click a tree node to inspect it
         </div>
       </footer>
     </div>
