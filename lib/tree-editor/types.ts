@@ -72,8 +72,6 @@ export interface FoldMapEntry {
 export interface FoldableNode {
   start: number;
   end: number;
-  label: string;
-  preview: string;
 }
 
 export interface LabelOption {

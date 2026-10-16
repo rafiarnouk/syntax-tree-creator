@@ -1,35 +1,47 @@
 import type { FoldMapEntry, FoldRecord, TreeNode } from "./types";
 
-export interface DiffResult {
-  prefixLen: number;
-  oldSuffixStart: number;
-}
-
-// Common prefix/suffix length between two strings, describing one edit.
-export function diffEdit(oldVal: string, newVal: string): DiffResult {
-  const len = Math.min(oldVal.length, newVal.length);
-  let p = 0;
-  while (p < len && oldVal.charAt(p) === newVal.charAt(p)) p++;
-  const maxSuffix = len - p;
-  let s = 0;
-  while (s < maxSuffix && oldVal.charAt(oldVal.length - 1 - s) === newVal.charAt(newVal.length - 1 - s)) s++;
-  return { prefixLen: p, oldSuffixStart: oldVal.length - s };
-}
-
+// Carries folds across an edit. A fold whose placeholder is untouched keeps
+// it: the text up to its end is unchanged (edit after it), or the text from
+// its start on is (edit before it). Failing both, e.g. after indenting a
+// block of lines around it, it's re-found by its exact placeholder text,
+// nearest its old spot. One the edit actually cut into is dropped.
 export function remapFolds(oldVal: string, newVal: string, folds: FoldRecord[]): FoldRecord[] {
   if (!folds.length || oldVal === newVal) return folds;
-  const d = diffEdit(oldVal, newVal);
   const delta = newVal.length - oldVal.length;
   const kept: FoldRecord[] = [];
+  const lost: FoldRecord[] = [];
   for (const f of folds) {
-    if (f.end <= d.prefixLen) {
-      kept.push(f);
-    } else if (f.start >= d.oldSuffixStart) {
-      kept.push({ ...f, start: f.start + delta, end: f.end + delta });
+    if (newVal.startsWith(oldVal.slice(0, f.end))) kept.push(f);
+    else if (newVal.endsWith(oldVal.slice(f.start))) kept.push({ ...f, start: f.start + delta, end: f.end + delta });
+    else lost.push(f);
+  }
+  for (const f of lost) {
+    const placeholder = oldVal.slice(f.start, f.end);
+    let best = -1;
+    for (let at = newVal.indexOf(placeholder); at !== -1; at = newVal.indexOf(placeholder, at + 1)) {
+      const taken = kept.some((k) => at < k.end && at + placeholder.length > k.start);
+      if (!taken && (best === -1 || Math.abs(at - f.start) < Math.abs(best - f.start))) best = at;
     }
-    // else: edit overlaps this placeholder — drop it, position unrecoverable.
+    if (best !== -1) kept.push({ ...f, start: best, end: best + placeholder.length });
   }
   return kept;
+}
+
+// Drops saved folds that no longer line up with the saved text.
+export function validFolds(text: string, folds: FoldRecord[]): FoldRecord[] {
+  let lastEnd = 0;
+  return [...folds]
+    .sort((a, b) => a.start - b.start)
+    .filter((f) => {
+      const placeholder = text.slice(f.start, f.end);
+      const ok =
+        typeof f.original === "string" &&
+        f.start >= lastEnd &&
+        f.end <= text.length &&
+        /^\[[^[\]\n]*\]$/.test(placeholder);
+      if (ok) lastEnd = f.end;
+      return ok;
+    });
 }
 
 export function buildFoldMap(rawText: string, folds: FoldRecord[]): { text: string; map: FoldMapEntry[] } {
@@ -56,7 +68,7 @@ export function fullToRaw(offset: number, map: FoldMapEntry[]): { start: number;
   let shift = 0;
   for (const m of map) {
     if (offset < m.fullStart) break;
-    if (offset <= m.fullEnd) return { start: m.rawStart, end: m.rawEnd };
+    if (offset < m.fullEnd) return { start: m.rawStart, end: m.rawEnd };
     shift += (m.fullEnd - m.fullStart) - (m.rawEnd - m.rawStart);
   }
   const raw = offset - shift;

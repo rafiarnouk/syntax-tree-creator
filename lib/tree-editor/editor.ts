@@ -1,4 +1,4 @@
-import { buildFoldMap, mapNodeToRaw, remapFolds } from "./fold-map";
+import { buildFoldMap, mapNodeToRaw, remapFolds, validFolds } from "./fold-map";
 import {
   buildPreview,
   collectWords,
@@ -18,6 +18,7 @@ import {
 import { layout, LEAF_GAP } from "./layout";
 import { buildExportSvg } from "./svg-export";
 import { bindThemeToggle } from "./theme";
+import { TreeViewport } from "./viewport";
 import type { BracketScan, FoldableNode, FoldRecord, LabelOption, MatchSet, TreeNode } from "./types";
 import { escapeHtml, lineOf } from "./utils";
 
@@ -27,17 +28,20 @@ const FOLDS_KEY = "syntax-tree-creator-folds";
 const STYLE_KEY = "syntax-tree-creator-style";
 const REF_KEY = "syntax-tree-creator-reference";
 const HIGHLIGHTS_KEY = "syntax-tree-creator-highlights";
-const ZOOM_MIN = 0.25;
-const ZOOM_MAX = 2.5;
-const ZOOM_STEP = 1.2;
 
 type TreeStyle = "simple" | "fancy";
+
+// Archived: the Simple/Fancy toggle is gone from the UI, so the tree always
+// draws "simple". Flip this (and restore #styleToggle) to bring it back.
+const FANCY_STYLE_ENABLED = false;
 
 // Typed text gets checked against this as you go; a matching trigger right
 // before the cursor is replaced with its symbol.
 const SHORTCUTS: Record<string, string> = {
   "\\phi": "Φ",
 };
+
+const NAV_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
 
 // Disabled for now; showAutocomplete/chooseAutocomplete etc. stay in place.
 const AUTOCOMPLETE_ENABLED = false;
@@ -92,13 +96,10 @@ export class TreeEditor {
   private treeBadge: HTMLElement;
   private treeLegendEl: HTMLElement;
   private acEl: HTMLElement;
-  private styleToggleEl: HTMLElement;
+  private styleToggleEl: HTMLElement | null;
   private themeToggleEl: HTMLElement;
   private refInput: HTMLInputElement;
-  private zoomOutBtn: HTMLButtonElement;
-  private zoomInBtn: HTMLButtonElement;
-  private zoomResetBtn: HTMLButtonElement;
-  private zoomFitBtn: HTMLButtonElement;
+  private viewport: TreeViewport;
   private exportPngBtn: HTMLButtonElement;
   private exportSvgBtn: HTMLButtonElement;
   private formatBtn: HTMLButtonElement;
@@ -116,8 +117,6 @@ export class TreeEditor {
   private folds: FoldRecord[] = [];
   private prevValue = "";
   private treeStyle: TreeStyle = "simple";
-  private zoom = 1;
-  private fitRequested = false;
   private highlightsEnabled = true;
 
   constructor(root: HTMLElement) {
@@ -130,13 +129,15 @@ export class TreeEditor {
     this.treeBadge = root.querySelector<HTMLElement>("#treeBadge")!;
     this.treeLegendEl = root.querySelector<HTMLElement>("#treeLegend")!;
     this.acEl = root.querySelector<HTMLElement>("#autocomplete")!;
-    this.styleToggleEl = root.querySelector<HTMLElement>("#styleToggle")!;
+    this.styleToggleEl = root.querySelector<HTMLElement>("#styleToggle");
     this.themeToggleEl = root.querySelector<HTMLElement>("#themeToggle")!;
     this.refInput = root.querySelector<HTMLInputElement>("#refSentence")!;
-    this.zoomOutBtn = root.querySelector<HTMLButtonElement>("#zoomOutBtn")!;
-    this.zoomInBtn = root.querySelector<HTMLButtonElement>("#zoomInBtn")!;
-    this.zoomResetBtn = root.querySelector<HTMLButtonElement>("#zoomResetBtn")!;
-    this.zoomFitBtn = root.querySelector<HTMLButtonElement>("#zoomFitBtn")!;
+    this.viewport = new TreeViewport(this.treeArea, {
+      out: root.querySelector<HTMLButtonElement>("#zoomOutBtn")!,
+      in: root.querySelector<HTMLButtonElement>("#zoomInBtn")!,
+      reset: root.querySelector<HTMLButtonElement>("#zoomResetBtn")!,
+      fit: root.querySelector<HTMLButtonElement>("#zoomFitBtn")!,
+    });
     this.exportPngBtn = root.querySelector<HTMLButtonElement>("#exportPngBtn")!;
     this.exportSvgBtn = root.querySelector<HTMLButtonElement>("#exportSvgBtn")!;
     this.formatBtn = root.querySelector<HTMLButtonElement>("#formatBtn")!;
@@ -163,7 +164,7 @@ export class TreeEditor {
     }
     try {
       const savedStyle = localStorage.getItem(STYLE_KEY);
-      if (savedStyle === "simple" || savedStyle === "fancy") this.treeStyle = savedStyle;
+      if (FANCY_STYLE_ENABLED && (savedStyle === "simple" || savedStyle === "fancy")) this.treeStyle = savedStyle;
     } catch {
       /* private browsing / storage disabled */
     }
@@ -180,6 +181,7 @@ export class TreeEditor {
     }
 
     this.ta.value = saved || "";
+    this.folds = validFolds(this.ta.value, this.folds);
     this.prevValue = this.ta.value;
     this.renderStyleToggle();
     bindThemeToggle(this.themeToggleEl);
@@ -207,7 +209,7 @@ export class TreeEditor {
       }
     });
 
-    this.styleToggleEl.addEventListener("click", (e) => {
+    this.styleToggleEl?.addEventListener("click", (e) => {
       const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(".style-btn");
       const style = btn?.getAttribute("data-style");
       if (style !== "simple" && style !== "fancy") return;
@@ -240,7 +242,7 @@ export class TreeEditor {
   }
 
   private renderStyleToggle(): void {
-    this.styleToggleEl.querySelectorAll<HTMLButtonElement>(".style-btn").forEach((btn) => {
+    this.styleToggleEl?.querySelectorAll<HTMLButtonElement>(".style-btn").forEach((btn) => {
       btn.classList.toggle("active", btn.getAttribute("data-style") === this.treeStyle);
     });
   }
@@ -400,9 +402,7 @@ export class TreeEditor {
       if (unfoldIdx !== undefined) {
         btn = `<button type="button" class="fold-btn" data-unfold="${unfoldIdx}" title="Expand this node">▸</button>`;
       } else if (foldable0) {
-        btn =
-          `<button type="button" class="fold-btn" data-fold-start="${foldable0.start}" data-fold-end="${foldable0.end}" ` +
-          `data-label="${escapeHtml(foldable0.label)}" data-preview="${escapeHtml(foldable0.preview)}" title="Collapse this node">▾</button>`;
+        btn = `<button type="button" class="fold-btn" data-fold-start="${foldable0.start}" data-fold-end="${foldable0.end}" title="Collapse this node">▾</button>`;
       }
       html += `<div class="gline">${btn}<span class="lineno">${i}</span></div>`;
     }
@@ -425,6 +425,7 @@ export class TreeEditor {
 
   private showTreeMessage(html: string): void {
     this.treeArea.innerHTML = `<div class="tree-empty">${html}</div>`;
+    this.viewport.clear();
     this.treeBadge.textContent = "";
     this.treeSpans = [];
     this.exportPngBtn.disabled = true;
@@ -525,18 +526,9 @@ export class TreeEditor {
     const w = maxX + PAD * 2;
     const h = (maxDepth + 1) * LEVEL_H + PAD * 1.4;
     const simple = this.treeStyle === "simple";
+    const zoom = this.viewport.scale;
 
-    if (this.fitRequested) {
-      this.fitRequested = false;
-      const availW = this.treeArea.clientWidth - 20; // minus .tree-area's own padding
-      const availH = this.treeArea.clientHeight - 20;
-      if (availW > 0 && availH > 0) this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.min(availW / w, availH / h)));
-    }
-    this.zoomResetBtn.textContent = Math.round(this.zoom * 100) + "%";
-    this.zoomOutBtn.disabled = this.zoom <= ZOOM_MIN;
-    this.zoomInBtn.disabled = this.zoom >= ZOOM_MAX;
-
-    let svg = `<svg class="tree-svg" viewBox="0 0 ${w} ${h}" width="${w * this.zoom}" height="${h * this.zoom}">`;
+    let svg = `<svg class="tree-svg" viewBox="0 0 ${w} ${h}" width="${w * zoom}" height="${h * zoom}">`;
     for (const l of lines) {
       const x1 = l.x1 + PAD;
       const y1 = l.y1 * LEVEL_H + PAD + NODE_GAP;
@@ -565,6 +557,7 @@ export class TreeEditor {
     }
     svg += "</svg>";
     this.treeArea.innerHTML = svg;
+    this.viewport.show(this.treeArea.querySelector<SVGSVGElement>("svg.tree-svg")!, w, h);
 
     this.treeArea.querySelectorAll<SVGTextElement>(".tree-node").forEach((el) => {
       el.addEventListener("click", () => {
@@ -1034,45 +1027,124 @@ export class TreeEditor {
   }
 
   // ---------- folding ----------
+  // A fold swaps a node's text for a one-line placeholder, e.g.
+  // "[NP the … dog]", and keeps the real text in its record. Folds never
+  // nest: folding around one expands it first.
 
-  private foldRange(start: number, end: number, label: string, preview: string): void {
-    let value = this.ta.value;
-    let newEnd = end;
-    // Absorb any fold already inside this range first — a stash must hold
-    // real text, never another fold's placeholder.
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (let i = 0; i < this.folds.length; i++) {
-        const inner = this.folds[i];
-        if (inner.start >= start && inner.end <= newEnd) {
-          value = value.slice(0, inner.start) + inner.original + value.slice(inner.end);
-          newEnd += inner.original.length - (inner.end - inner.start);
-          this.folds.splice(i, 1);
-          changed = true;
-          break;
-        }
-      }
-    }
-    const placeholder = "[" + label + (preview ? " " + preview : "") + "]";
-    const original = value.slice(start, newEnd);
-    this.folds.push({ start, end: start + placeholder.length, original });
-    this.ta.value = value.slice(0, start) + placeholder + value.slice(newEnd);
+  // Replaces raw text [start, end), shifting every fold after it and
+  // dropping any inside it.
+  private spliceRaw(start: number, end: number, text: string): void {
+    const delta = text.length - (end - start);
+    this.folds = this.folds
+      .filter((f) => f.end <= start || f.start >= end)
+      .map((f) => (f.start >= end ? { ...f, start: f.start + delta, end: f.end + delta } : f));
+    const value = this.ta.value;
+    this.ta.value = value.slice(0, start) + text + value.slice(end);
     this.prevValue = this.ta.value;
-    this.ta.focus();
-    this.ta.setSelectionRange(start, start + placeholder.length);
+  }
+
+  // Runs a fold/unfold of raw [start, end) without moving the view: the
+  // caret keeps its place (or goes to `start` if it was inside), and so
+  // does the scroll position.
+  private withFoldEdit(start: number, end: number, edit: () => void): void {
+    const caret = this.ta.selectionStart;
+    const scrollTop = this.ta.scrollTop;
+    const lengthBefore = this.ta.value.length;
+    edit();
+    const delta = this.ta.value.length - lengthBefore;
+    const next = caret <= start ? caret : caret >= end ? caret + delta : start;
+    this.ta.focus({ preventScroll: true });
+    this.ta.setSelectionRange(next, next);
     this.update();
+    this.ta.scrollTop = scrollTop;
+    this.syncScroll();
+  }
+
+  private foldRange(start: number, end: number): void {
+    this.withFoldEdit(start, end, () => {
+      let newEnd = end;
+      const inner = this.folds.filter((f) => f.start >= start && f.end <= end).sort((a, b) => b.start - a.start);
+      for (const f of inner) {
+        this.spliceRaw(f.start, f.end, f.original);
+        newEnd += f.original.length - (f.end - f.start);
+      }
+      const original = this.ta.value.slice(start, newEnd);
+      const node = parseTree(tokenize(original));
+      const label = node?.kind === "phrase" ? node.label : "";
+      const words = node ? collectWords(node) : [];
+      const placeholder = "[" + label + " " + (words.length ? buildPreview(words) : "…") + "]";
+      this.spliceRaw(start, newEnd, placeholder);
+      this.folds.push({ start, end: start + placeholder.length, original });
+    });
   }
 
   private unfoldAt(idx: number): void {
     const f = this.folds[idx];
     if (!f) return;
-    const value = this.ta.value;
-    this.folds.splice(idx, 1);
-    this.ta.value = value.slice(0, f.start) + f.original + value.slice(f.end);
-    this.prevValue = this.ta.value;
-    this.ta.focus();
-    this.ta.setSelectionRange(f.start, f.start + f.original.length);
+    this.withFoldEdit(f.start, f.end, () => this.spliceRaw(f.start, f.end, f.original));
+  }
+
+  private foldAt(pos: number): FoldRecord | undefined {
+    return this.folds.find((f) => pos > f.start && pos < f.end);
+  }
+
+  // Keyboard caret moves hop over a placeholder as if it were one
+  // character, in the direction they were going.
+  private snapOutOfFolds(prevStart: number, prevEnd: number): void {
+    const hop = (p: number, prev: number): number => {
+      const f = this.foldAt(p);
+      if (!f) return p;
+      if (p > prev) return f.end;
+      if (p < prev) return f.start;
+      return p - f.start < f.end - p ? f.start : f.end;
+    };
+    const { selectionStart: s, selectionEnd: e, selectionDirection: dir } = this.ta;
+    const ns = hop(s, prevStart);
+    const ne = s === e ? ns : hop(e, prevEnd);
+    if (ns === s && ne === e) return;
+    this.ta.setSelectionRange(Math.min(ns, ne), Math.max(ns, ne), dir);
+    this.update();
+  }
+
+  // A mouse selection that ends partway into a placeholder grows to cover it.
+  private coverFolds(): void {
+    const { selectionStart: s, selectionEnd: e, selectionDirection: dir } = this.ta;
+    if (s === e) return;
+    const ns = this.foldAt(s)?.start ?? s;
+    const ne = this.foldAt(e)?.end ?? e;
+    if (ns !== s || ne !== e) this.ta.setSelectionRange(ns, ne, dir);
+  }
+
+  // An edit that would cut into a placeholder selects the whole collapsed
+  // node instead, so it can only be deleted or replaced as a unit.
+  private guardFolds(e: InputEvent): void {
+    if (!this.folds.length || e.inputType.startsWith("history")) return;
+    let s = this.ta.selectionStart;
+    let end = this.ta.selectionEnd;
+    if (s === end && e.inputType.startsWith("delete")) {
+      if (e.inputType.includes("Backward")) s = Math.max(0, s - 1);
+      else end += 1;
+    }
+    const cuts = (f: FoldRecord) =>
+      s === end ? s > f.start && s < f.end : s < f.end && end > f.start && (s > f.start || end < f.end);
+    const hit = this.folds.find(cuts);
+    if (!hit) return;
+    e.preventDefault();
+    this.ta.setSelectionRange(Math.min(this.ta.selectionStart, hit.start), Math.max(this.ta.selectionEnd, hit.end));
+    this.update();
+  }
+
+  // Copying a collapsed node copies what it hides, not its placeholder.
+  private copyExpanded(e: ClipboardEvent, cut: boolean): void {
+    const s = this.ta.selectionStart;
+    const end = this.ta.selectionEnd;
+    const inside = this.folds.filter((f) => f.start >= s && f.end <= end).map((f) => ({ ...f, start: f.start - s, end: f.end - s }));
+    if (!inside.length || !e.clipboardData) return;
+    e.preventDefault();
+    e.clipboardData.setData("text/plain", buildFoldMap(this.ta.value.slice(s, end), inside).text);
+    if (!cut) return;
+    this.spliceRaw(s, end, "");
+    this.ta.setSelectionRange(s, s);
     this.update();
   }
 
@@ -1080,10 +1152,7 @@ export class TreeEditor {
     const result: FoldableNode[] = [];
     const walk = (node: TreeNode): void => {
       if (isLeaf(node) || node.kind !== "phrase") return;
-      if (lineOf(text, node.end) > lineOf(text, node.start)) {
-        const words = collectWords(node);
-        result.push({ start: node.start, end: node.end, label: node.label, preview: words.length ? buildPreview(words) : "…" });
-      }
+      if (lineOf(text, node.end) > lineOf(text, node.start)) result.push({ start: node.start, end: node.end });
       for (const c of node.children) walk(c);
     };
     walk(root);
@@ -1108,6 +1177,10 @@ export class TreeEditor {
       }
       this.update();
     });
+    this.ta.addEventListener("beforeinput", (e) => this.guardFolds(e));
+    this.ta.addEventListener("copy", (e) => this.copyExpanded(e, false));
+    this.ta.addEventListener("cut", (e) => this.copyExpanded(e, true));
+    this.ta.addEventListener("mouseup", () => this.coverFolds());
     this.ta.addEventListener("keyup", (e) => {
       if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) this.update();
     });
@@ -1117,35 +1190,19 @@ export class TreeEditor {
       this.clearActiveHighlight();
     });
 
+    // Keeps the editor focused: a blur would tidy the current leaf, shifting
+    // the offsets these buttons were rendered with.
+    this.gutterEl.addEventListener("mousedown", (e) => e.preventDefault());
     this.gutterEl.addEventListener("click", (e) => {
       const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(".fold-btn");
       if (!btn) return;
       if (btn.hasAttribute("data-unfold")) this.unfoldAt(+btn.getAttribute("data-unfold")!);
-      else if (btn.hasAttribute("data-fold-start"))
-        this.foldRange(
-          +btn.getAttribute("data-fold-start")!,
-          +btn.getAttribute("data-fold-end")!,
-          btn.getAttribute("data-label") || "",
-          btn.getAttribute("data-preview") || "",
-        );
-    });
-
-    this.zoomOutBtn.addEventListener("click", () => this.setZoom(this.zoom / ZOOM_STEP));
-    this.zoomInBtn.addEventListener("click", () => this.setZoom(this.zoom * ZOOM_STEP));
-    this.zoomResetBtn.addEventListener("click", () => this.setZoom(1));
-    this.zoomFitBtn.addEventListener("click", () => {
-      this.fitRequested = true;
-      this.update();
+      else if (btn.hasAttribute("data-fold-start")) this.foldRange(+btn.getAttribute("data-fold-start")!, +btn.getAttribute("data-fold-end")!);
     });
 
     this.exportPngBtn.addEventListener("click", () => this.exportPng());
     this.exportSvgBtn.addEventListener("click", () => this.exportSvg());
     this.formatBtn.addEventListener("click", () => this.formatDocument());
-  }
-
-  private setZoom(z: number): void {
-    this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
-    this.update();
   }
 
   // ---------- export ----------
@@ -1221,6 +1278,10 @@ export class TreeEditor {
   }
 
   private onKeyDown(e: KeyboardEvent): void {
+    if (this.folds.length && NAV_KEYS.has(e.key)) {
+      const { selectionStart, selectionEnd } = this.ta;
+      setTimeout(() => this.snapOutOfFolds(selectionStart, selectionEnd));
+    }
     if (this.acOpen && ["ArrowDown", "ArrowUp", "Enter", "Tab", "Escape"].includes(e.key)) {
       this.handleAutocompleteKey(e);
       return;

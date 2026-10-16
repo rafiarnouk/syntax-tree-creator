@@ -79,14 +79,6 @@ export default function TreeEditorApp({ hidden }: { hidden?: boolean }) {
           <div className="panel-head">
             <span className="label">Tree</span>
             <div className="tree-controls">
-              <div className="style-toggle" id="styleToggle" role="group" aria-label="Tree style">
-                <button type="button" className="style-btn" data-style="simple">
-                  Simple
-                </button>
-                <button type="button" className="style-btn" data-style="fancy">
-                  Fancy
-                </button>
-              </div>
               <span className="zoom-label" aria-hidden="true">
                 <SearchIcon />
               </span>
@@ -142,7 +134,7 @@ export default function TreeEditorApp({ hidden }: { hidden?: boolean }) {
       <footer>
         <div className="shortcuts">
           <kbd>[</kbd> opens a node · <kbd>Tab</kbd>/<kbd>Enter</kbd> advance, collapsing a finished leaf onto one line · ▾/▸ in the gutter
-          folds/unfolds a branch · click a tree node to jump to it
+          folds/unfolds a branch · click a tree node to jump to it · drag the tree to pan, pinch or <kbd>Ctrl</kbd>+scroll to zoom
         </div>
       </footer>
     </div>

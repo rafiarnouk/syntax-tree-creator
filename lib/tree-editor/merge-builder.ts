@@ -10,6 +10,7 @@ import { layoutForest } from "./merge-layout";
 import { collectWords, isLeaf, isTriangleNode, stripQuotes } from "./notation";
 import { buildExportSvg } from "./svg-export";
 import { bindThemeToggle } from "./theme";
+import { TreeViewport } from "./viewport";
 import type { LeafNode, PhraseNode, TreeNode } from "./types";
 import { escapeHtml } from "./utils";
 
@@ -29,10 +30,6 @@ interface DragState {
   lastY: number;
   target: DropTarget;
 }
-
-const ZOOM_MIN = 0.25;
-const ZOOM_MAX = 2.5;
-const ZOOM_STEP = 1.2;
 
 const SAMPLE_SENTENCE = "The dog might chase the cat.";
 const SAMPLE_WORDS: { label: string; content: string }[] = [
@@ -72,10 +69,7 @@ export class MergeBuilder {
   private hintEl: HTMLElement;
   private trayBadge: HTMLElement;
   private tray: HTMLElement;
-  private zoomOutBtn: HTMLButtonElement;
-  private zoomInBtn: HTMLButtonElement;
-  private zoomResetBtn: HTMLButtonElement;
-  private zoomFitBtn: HTMLButtonElement;
+  private viewport: TreeViewport;
   private exportPngBtn: HTMLButtonElement;
   private exportSvgBtn: HTMLButtonElement;
   private treeBadge: HTMLElement;
@@ -83,8 +77,6 @@ export class MergeBuilder {
   private canvas: HTMLElement;
 
   private treeStyle: TreeStyle = "simple";
-  private zoom = 1;
-  private fitRequested = false;
 
   // Every entry is either a basic leaf — a phrase with exactly one leaf
   // child, e.g. [D the] — or the result of a merge, with exactly two
@@ -115,15 +107,17 @@ export class MergeBuilder {
     this.hintEl = root.querySelector<HTMLElement>("#mbHint")!;
     this.trayBadge = root.querySelector<HTMLElement>("#mbTrayBadge")!;
     this.tray = root.querySelector<HTMLElement>("#mbTray")!;
-    this.zoomOutBtn = root.querySelector<HTMLButtonElement>("#mbZoomOutBtn")!;
-    this.zoomInBtn = root.querySelector<HTMLButtonElement>("#mbZoomInBtn")!;
-    this.zoomResetBtn = root.querySelector<HTMLButtonElement>("#mbZoomResetBtn")!;
-    this.zoomFitBtn = root.querySelector<HTMLButtonElement>("#mbZoomFitBtn")!;
     this.exportPngBtn = root.querySelector<HTMLButtonElement>("#mbExportPngBtn")!;
     this.exportSvgBtn = root.querySelector<HTMLButtonElement>("#mbExportSvgBtn")!;
     this.treeBadge = root.querySelector<HTMLElement>("#mbTreeBadge")!;
     this.treeLegendEl = root.querySelector<HTMLElement>("#mbTreeLegend")!;
     this.canvas = root.querySelector<HTMLElement>("#mbCanvas")!;
+    this.viewport = new TreeViewport(this.canvas, {
+      out: root.querySelector<HTMLButtonElement>("#mbZoomOutBtn")!,
+      in: root.querySelector<HTMLButtonElement>("#mbZoomInBtn")!,
+      reset: root.querySelector<HTMLButtonElement>("#mbZoomResetBtn")!,
+      fit: root.querySelector<HTMLButtonElement>("#mbZoomFitBtn")!,
+    });
 
     this.bindEvents();
     this.boot();
@@ -370,9 +364,10 @@ export class MergeBuilder {
       </span>`;
   }
 
-  // Same shape at every level: the label on top, what it's made of below —
-  // a word for a leaf, or the two merged nodes, nested, for a merge. Only
-  // the outermost (top-level) nodes get a grip and buttons.
+  // A leaf is its label over its word. A merge is a frame around its two
+  // nodes with its own label between them, so each level of merging only
+  // adds a frame's padding, not another row. Top-level nodes also get a grip
+  // and buttons: beside the label for a leaf, in a slim bar for a merge.
   // Each frame adds a little padding under what it wraps, so a node beside
   // a taller sibling gets lifted by the difference (`lift`, in frame steps).
   // That keeps every word on one shared line while each frame stays snug.
@@ -392,18 +387,23 @@ export class MergeBuilder {
       if (!basic) actions += `<button type="button" class="mb-icon-btn" data-action="unlink" data-idx="${idx}" title="Unlink (undo this merge)" aria-label="Unlink" tabindex="-1">${UNLINK_SVG}</button>`;
       actions += `<button type="button" class="mb-icon-btn danger" data-action="remove" data-idx="${idx}" title="${basic ? "Remove" : "Remove this node and everything in it"}" aria-label="Remove" tabindex="-1">${REMOVE_SVG}</button>`;
     }
-    const head = `
-      <div class="mb-chip-head">
-        <span class="mb-head-side">${grip}</span>
-        ${this.fieldHtml(key, "label", phrase.label)}
-        <span class="mb-head-side end">${actions}</span>
-      </div>`;
+    const label = this.fieldHtml(key, "label", phrase.label);
 
-    const body = basic
-      ? this.fieldHtml(key, "content", (phrase.children[0] as LeafNode).text)
-      : `<div class="mb-chip-kids">${phrase.children.map((c) => this.renderChip(c, null, height - 1 - this.mergeHeight(c))).join("")}</div>`;
-
-    return `<div class="${cls}" data-key="${key}"${idxAttr} style="${style}">${head}${body}</div>`;
+    let inner: string;
+    if (basic) {
+      inner = `
+        <div class="mb-chip-head">
+          <span class="mb-head-side">${grip}</span>
+          ${label}
+          <span class="mb-head-side end">${actions}</span>
+        </div>
+        ${this.fieldHtml(key, "content", (phrase.children[0] as LeafNode).text)}`;
+    } else {
+      const [left, right] = phrase.children.map((c) => this.renderChip(c, null, height - 1 - this.mergeHeight(c)));
+      const bar = top ? `<div class="mb-chip-bar">${grip}<span class="mb-head-side end">${actions}</span></div>` : "";
+      inner = `${bar}<div class="mb-chip-kids">${left}<div class="mb-chip-mid">${label}</div>${right}</div>`;
+    }
+    return `<div class="${cls}" data-key="${key}"${idxAttr} style="${style}">${inner}</div>`;
   }
 
   private fieldHtml(key: number, field: "label" | "content", value: string): string {
@@ -457,12 +457,14 @@ export class MergeBuilder {
         const wrapsExisting = Array.from(el.querySelectorAll<HTMLElement>(".mb-chip")).some((k) => before.has(Number(k.dataset.key)));
         if (wrapsExisting) {
           el.animate([{ backgroundColor: "transparent", borderColor: "transparent", boxShadow: "none" }, {}], { duration: 360, easing: "ease-out" });
-          el.querySelector(":scope > .mb-chip-head")?.animate([{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }], {
-            duration: 260,
-            delay: 140,
-            easing: "ease-out",
-            fill: "backwards",
-          });
+          el.querySelectorAll(":scope > .mb-chip-bar, :scope > .mb-chip-kids > .mb-chip-mid").forEach((part) =>
+            part.animate([{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }], {
+              duration: 260,
+              delay: 140,
+              easing: "ease-out",
+              fill: "backwards",
+            }),
+          );
         } else if (!parentChip || !fresh.has(parentChip)) {
           el.animate([{ opacity: 0, transform: "translateY(8px) scale(0.85)" }, { opacity: 1, transform: "none" }], {
             duration: 240,
@@ -729,6 +731,7 @@ export class MergeBuilder {
       this.canvas.innerHTML = '<div class="tree-empty">Add a leaf to see it appear here.</div>';
       this.treeBadge.textContent = "";
       this.treeLegendEl.hidden = true;
+      this.viewport.clear();
       return;
     }
 
@@ -738,16 +741,6 @@ export class MergeBuilder {
     const NODE_GAP = 11;
     const w = width + PAD * 2;
     const h = (maxDepth + 1) * LEVEL_H + PAD * 1.4;
-
-    if (this.fitRequested) {
-      this.fitRequested = false;
-      const availW = this.canvas.clientWidth - 20;
-      const availH = this.canvas.clientHeight - 20;
-      if (availW > 0 && availH > 0) this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.min(availW / w, availH / h)));
-    }
-    this.zoomResetBtn.textContent = Math.round(this.zoom * 100) + "%";
-    this.zoomOutBtn.disabled = this.zoom <= ZOOM_MIN;
-    this.zoomInBtn.disabled = this.zoom >= ZOOM_MAX;
 
     interface DrawNode {
       x: number;
@@ -802,7 +795,8 @@ export class MergeBuilder {
     visibleForest.forEach((root) => walk(root, null));
 
     const simple = this.treeStyle === "simple";
-    let svg = `<svg class="tree-svg" viewBox="0 0 ${w} ${h}" width="${w * this.zoom}" height="${h * this.zoom}">`;
+    const zoom = this.viewport.scale;
+    let svg = `<svg class="tree-svg" viewBox="0 0 ${w} ${h}" width="${w * zoom}" height="${h * zoom}">`;
     for (const l of lines) {
       const x1 = l.x1 + PAD;
       const y1 = l.y1 * LEVEL_H + PAD + NODE_GAP;
@@ -837,6 +831,7 @@ export class MergeBuilder {
 
     const svgEl = this.canvas.querySelector<SVGSVGElement>("svg.tree-svg");
     if (svgEl) {
+      this.viewport.show(svgEl, w, h);
       if (this.activeId) {
         const el = document.getElementById(this.activeId);
         if (el instanceof SVGGraphicsElement) this.addHighlightRect(svgEl, el, "tree-node-highlight");
@@ -965,21 +960,8 @@ export class MergeBuilder {
       else if (this.pickedIdx !== null) this.setPicked(null);
     });
 
-    this.zoomOutBtn.addEventListener("click", () => this.setZoom(this.zoom / ZOOM_STEP));
-    this.zoomInBtn.addEventListener("click", () => this.setZoom(this.zoom * ZOOM_STEP));
-    this.zoomResetBtn.addEventListener("click", () => this.setZoom(1));
-    this.zoomFitBtn.addEventListener("click", () => {
-      this.fitRequested = true;
-      this.renderCanvas();
-    });
-
     this.exportPngBtn.addEventListener("click", () => this.exportPng());
     this.exportSvgBtn.addEventListener("click", () => this.exportSvg());
-  }
-
-  private setZoom(z: number): void {
-    this.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
-    this.renderCanvas();
   }
 
   // ---------- export (mirrors TreeEditor's, against this.canvas) ----------

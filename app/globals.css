@@ -613,6 +613,16 @@ pre .indent-guide {
   display: flex;
   overflow: auto;
   padding: 10px;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: pan-x pan-y;
+}
+.tree-area.pannable {
+  cursor: grab;
+}
+.tree-area.panning,
+.tree-area.panning * {
+  cursor: grabbing;
 }
 .tree-svg {
   display: block;
@@ -742,7 +752,7 @@ pre .indent-guide {
   padding: 8px 14px;
   font-size: 0.78rem;
   color: var(--muted);
-  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   background: var(--surface-2);
 }
 
@@ -853,13 +863,29 @@ pre .indent-guide {
   min-width: 68px;
 }
 .mb-merged {
-  padding: 5px 6px calc(var(--mb-nest) - 1px);
+  gap: 2px;
+  padding: calc(var(--mb-nest) - 1px) 6px;
   background: color-mix(in srgb, var(--node-color) 15%, var(--surface));
 }
 .mb-chip-kids {
   display: flex;
   align-items: flex-end;
-  gap: 6px;
+  gap: 3px;
+}
+.mb-top.mb-merged {
+  padding-top: 4px;
+}
+/* A merge's own label, between the two nodes it joins. */
+.mb-chip-mid {
+  align-self: center;
+  display: flex;
+}
+.mb-chip-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 18px;
+  margin-inline: -2px;
 }
 
 /* Selection is outline-only, never a color — the chip keeps its own depth
@@ -902,7 +928,7 @@ pre .indent-guide {
   align-items: center;
   justify-content: center;
   width: 14px;
-  height: 20px;
+  height: 18px;
   color: color-mix(in srgb, var(--node-color) 55%, var(--muted));
 }
 

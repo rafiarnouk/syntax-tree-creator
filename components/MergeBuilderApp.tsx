@@ -46,6 +46,7 @@ export default function MergeBuilderApp({ hidden }: { hidden?: boolean }) {
           <span className="label">Leaves &amp; nodes</span>
           <span className="badge" id="mbTrayBadge" />
         </div>
+        <div className="mb-hint" id="mbHint" />
         <div className="ref-row">
           <label htmlFor="mbRefSentence" className="ref-label">
             Reference sentence
@@ -56,7 +57,6 @@ export default function MergeBuilderApp({ hidden }: { hidden?: boolean }) {
           </button>
         </div>
         <div className="mb-tray" id="mbTray" />
-        <div className="mb-hint" id="mbHint" />
       </section>
 
       <section className="panel mb-tree-panel">
@@ -105,7 +105,8 @@ export default function MergeBuilderApp({ hidden }: { hidden?: boolean }) {
       <footer>
         <div className="shortcuts">
           Drag a node onto its neighbor to merge, or between nodes to move it · <kbd>Esc</kbd> cancels ·{" "}
-          <kbd>Tab</kbd>/<kbd>Enter</kbd> move through label and content fields · click a tree node to inspect it
+          <kbd>Tab</kbd>/<kbd>Enter</kbd> move through label and content fields · click a tree node to inspect it · drag the tree to
+          pan, pinch or <kbd>Ctrl</kbd>+scroll to zoom
         </div>
       </footer>
     </div>
