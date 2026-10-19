@@ -14,7 +14,7 @@ const FONT_SIZE = 14;
 const SUB_SCALE = 0.72; // matches the subscript tspan in renderLabelMarkup
 const H_GAP = 16; // min space between neighbors on a row
 const MIN_SPREAD = 28; // min distance between sibling centers, so branches never go near-vertical
-const TRIANGLE_PAD = 8;
+const MIN_TRIANGLE = 20;
 const MIN_W = 10;
 
 type Row = [number, number];
@@ -76,7 +76,7 @@ export function layout(root: TreeNode): number {
     if (node.kind === "leaf") return [box(measure(stripQuotes(node.text)))];
     const label = box(labelWidth(node.label, measure));
     if (isTriangleNode(node)) {
-      const base = measure(collectWords(node).map(stripQuotes).join(" ")) + TRIANGLE_PAD * 2;
+      const base = Math.max(measure(collectWords(node).map(stripQuotes).join(" ")), MIN_TRIANGLE);
       node.triangleWidth = base;
       return [label, box(base)];
     }
