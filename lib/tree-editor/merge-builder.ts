@@ -6,6 +6,7 @@
 // same architectural pattern as TreeEditor (see the "Why TreeEditor isn't a
 // React component" note in README.md).
 
+import { LEVEL_H, NODE_GAP } from "./layout";
 import { layoutForest } from "./merge-layout";
 import { collectWords, isLeaf, isTriangleNode, stripQuotes } from "./notation";
 import { buildExportSvg } from "./svg-export";
@@ -128,6 +129,7 @@ export class MergeBuilder {
   private boot(): void {
     bindThemeToggle(this.themeToggleEl);
     this.renderAll();
+    document.fonts?.ready.then(() => this.renderCanvas());
 
     this.resetBtn.addEventListener("click", () => {
       this.refInput.value = SAMPLE_SENTENCE;
@@ -737,8 +739,6 @@ export class MergeBuilder {
 
     const { width, maxDepth } = layoutForest(visibleForest);
     const PAD = 44;
-    const LEVEL_H = 70;
-    const NODE_GAP = 11;
     const w = width + PAD * 2;
     const h = (maxDepth + 1) * LEVEL_H + PAD * 1.4;
 
@@ -783,7 +783,7 @@ export class MergeBuilder {
 
       if (triangle && node.kind === "phrase") {
         const baseDepth = depth + 1;
-        const halfWidth = (node.triangleWidth ?? 86) / 2;
+        const halfWidth = (node.triangleWidth ?? 0) / 2;
         triangles.push({ x, apexDepth: depth, baseDepth, halfWidth, depth: baseDepth });
         const tid = "m" + counter++;
         addId(node, tid);
@@ -803,7 +803,7 @@ export class MergeBuilder {
       const x2 = l.x2 + PAD;
       const y2 = l.y2 * LEVEL_H + PAD - NODE_GAP;
       if (simple) {
-        svg += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="var(--ink)" stroke-width="1"/>`;
+        svg += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="var(--tree-line)" stroke-width="1"/>`;
       } else {
         svg += `<path d="M ${x1} ${y1} C ${x1} ${y1 + 28}, ${x2} ${y2 - 22}, ${x2} ${y2}" fill="none" stroke="var(--depth-${l.depth % 5})" stroke-width="1.6" opacity=".75"/>`;
       }
@@ -814,7 +814,7 @@ export class MergeBuilder {
       const baseY = t.baseDepth * LEVEL_H + PAD - NODE_GAP;
       const baseX1 = t.x + PAD - t.halfWidth;
       const baseX2 = t.x + PAD + t.halfWidth;
-      const stroke = simple ? "var(--ink)" : `var(--depth-${t.depth % 5})`;
+      const stroke = simple ? "var(--tree-line)" : `var(--depth-${t.depth % 5})`;
       svg += `<polygon points="${apexX},${apexY} ${baseX1},${baseY} ${baseX2},${baseY}" fill="none" stroke="${stroke}" stroke-width="${simple ? 1 : 1.6}"${simple ? "" : ' opacity=".75"'}/>`;
     }
     for (const n of nodes) {

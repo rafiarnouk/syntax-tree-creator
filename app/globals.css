@@ -1,16 +1,16 @@
 :root {
-  --bg: #eef1f6;
+  --bg: #fdf7e2;
   --surface: #ffffff;
-  --surface-2: #f6f8fc;
-  --surface-3: #eceff5;
-  --ink: #1b2233;
-  --muted: #5f6980;
-  --border: #d7dce6;
-  --accent: #3454d1;
+  --surface-2: #fefcf2;
+  --surface-3: #f3eddd;
+  --ink: #073642;
+  --muted: #586e75;
+  --border: #e0d8c3;
+  --accent: #2176b5;
   --accent-ink: #ffffff;
-  --accent-rgb: 52, 84, 209;
-  --danger: #c0392b;
-  --danger-bg: #fbeae8;
+  --accent-rgb: 33, 118, 181;
+  --danger: #dc322f;
+  --danger-bg: #fbeae4;
   --highlight: #fef08a;
   --c-command: #fbcfe8;
   --dominance: #bae6fd;
@@ -19,7 +19,11 @@
   --depth-2: #d97706;
   --depth-3: #db2777;
   --depth-4: #7c3aed;
-  --shadow: 0 1px 2px rgba(27, 34, 51, 0.06), 0 10px 28px rgba(27, 34, 51, 0.08);
+  --tree-node: #3454d1;
+  --tree-leaf: #c0392b;
+  --tree-line: #1b2233;
+  --tree-arrow: #8a3fb3;
+  --shadow: 0 1px 2px rgba(88, 70, 30, 0.06), 0 10px 28px rgba(88, 70, 30, 0.08);
   --line-h: 23px;
   --panel-h: 70vh;
   --control-h: 26px;
@@ -27,18 +31,18 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #11151f;
-    --surface: #171c28;
-    --surface-2: #1b212e;
-    --surface-3: #212838;
-    --ink: #e7ebf3;
-    --muted: #8d99b3;
-    --border: #2a3142;
-    --accent: #7c93ff;
-    --accent-ink: #0d1120;
-    --accent-rgb: 124, 147, 255;
-    --danger: #ff6b5e;
-    --danger-bg: #36201d;
+    --bg: #00212b;
+    --surface: #002b36;
+    --surface-2: #04313d;
+    --surface-3: #073642;
+    --ink: #eee8d5;
+    --muted: #93a1a1;
+    --border: #0f4351;
+    --accent: #3d9de3;
+    --accent-ink: #00212b;
+    --accent-rgb: 61, 157, 227;
+    --danger: #f2605b;
+    --danger-bg: #3a2027;
     --highlight: #7a6a1f;
     --c-command: #5b2740;
     --dominance: #1e3f54;
@@ -47,23 +51,27 @@
     --depth-2: #fbbf24;
     --depth-3: #f472b6;
     --depth-4: #a78bfa;
+    --tree-node: #7c93ff;
+    --tree-leaf: #ff6b5e;
+    --tree-line: #e7ebf3;
+    --tree-arrow: #c792ea;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 10px 28px rgba(0, 0, 0, 0.45);
   }
 }
 
 :root[data-theme="dark"] {
-  --bg: #11151f;
-  --surface: #171c28;
-  --surface-2: #1b212e;
-  --surface-3: #212838;
-  --ink: #e7ebf3;
-  --muted: #8d99b3;
-  --border: #2a3142;
-  --accent: #7c93ff;
-  --accent-ink: #0d1120;
-  --accent-rgb: 124, 147, 255;
-  --danger: #ff6b5e;
-  --danger-bg: #36201d;
+  --bg: #00212b;
+  --surface: #002b36;
+  --surface-2: #04313d;
+  --surface-3: #073642;
+  --ink: #eee8d5;
+  --muted: #93a1a1;
+  --border: #0f4351;
+  --accent: #3d9de3;
+  --accent-ink: #00212b;
+  --accent-rgb: 61, 157, 227;
+  --danger: #f2605b;
+  --danger-bg: #3a2027;
   --highlight: #7a6a1f;
   --c-command: #5b2740;
   --dominance: #1e3f54;
@@ -72,6 +80,10 @@
   --depth-2: #fbbf24;
   --depth-3: #f472b6;
   --depth-4: #a78bfa;
+  --tree-node: #7c93ff;
+  --tree-leaf: #ff6b5e;
+  --tree-line: #e7ebf3;
+  --tree-arrow: #c792ea;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 10px 28px rgba(0, 0, 0, 0.45);
 }
 
@@ -128,7 +140,7 @@ body {
 }
 .mode-switch-tab.active {
   border-color: var(--accent);
-  background: rgba(var(--accent-rgb), 0.1);
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
 }
 .mode-switch-tab:focus-visible {
   outline: 2px solid var(--accent);
@@ -250,14 +262,16 @@ header .tagline {
   border-bottom: 1px solid var(--border);
   background: var(--surface-2);
 }
-.panel-head .label {
+.panel-head .label,
+.tree-hud .label {
   text-transform: uppercase;
   font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.08em;
   color: var(--muted);
 }
-.panel-head .badge {
+.panel-head .badge,
+.tree-hud .badge {
   font-family: var(--font-ibm-plex-mono), monospace;
   font-size: 0.74rem;
   color: var(--muted);
@@ -501,6 +515,9 @@ header .tagline {
 .editor-scroll textarea::selection {
   background: rgba(var(--accent-rgb), 0.28);
 }
+pre .arrow-tok {
+  color: var(--tree-arrow);
+}
 pre .br {
   font-weight: 600;
   border-radius: 2px;
@@ -617,6 +634,38 @@ pre .indent-guide {
   -webkit-user-select: none;
   touch-action: pan-x pan-y;
 }
+/* The tree panel's controls float over the tree's own top corners, which
+   a tree (narrow at the root) mostly leaves empty. */
+.tree-hud {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  pointer-events: none;
+}
+.tree-hud .tree-controls {
+  pointer-events: auto;
+}
+.tree-hud-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: var(--control-h);
+  padding: 0 9px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: blur(6px);
+}
+.tree-hud .zoom-toggle,
+.tree-hud .style-toggle {
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgba(27, 34, 51, 0.1);
+}
 .tree-area.pannable {
   cursor: grab;
 }
@@ -641,10 +690,10 @@ pre .indent-guide {
 
 }
 .tree-node.simple-node {
-  fill: var(--accent);
+  fill: var(--tree-node);
 }
 .tree-node.simple-leaf {
-  fill: var(--danger);
+  fill: var(--tree-leaf);
 }
 .tree-node.label.simple-node {
   font-weight: 400;
@@ -1260,4 +1309,102 @@ kbd {
 }
 [hidden] {
   display: none !important;
+}
+
+/* ---------- glass: translucent panels over a color wash ----------
+   The page is plain for its upper part, with overlapping color blobs pooled
+   along the bottom of the screen; panels and floating controls are frosted
+   glass over it. Off unless <html> has data-look="glass" (GLASS_LOOK in
+   app/layout.tsx); everything for this look lives in this block. */
+
+:root[data-look="glass"] {
+  --page-bg: #ffffff;
+  --glass: color-mix(in srgb, var(--surface) 58%, transparent);
+  --glass-2: color-mix(in srgb, var(--surface-2) 40%, transparent);
+  --glass-strong: color-mix(in srgb, var(--surface) 78%, transparent);
+  --glass-edge: rgba(255, 255, 255, 0.7);
+  --glass-shadow: 0 1px 2px rgba(27, 34, 51, 0.04), 0 12px 40px rgba(40, 30, 90, 0.1);
+  --blob-1: rgba(255, 82, 156, 0.9);
+  --blob-2: rgba(255, 164, 56, 0.88);
+  --blob-3: rgba(139, 92, 246, 0.75);
+  --blob-4: rgba(59, 130, 246, 0.9);
+  --blob-5: rgba(32, 210, 186, 0.8);
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-look="glass"]:not([data-theme="light"]) {
+    --page-bg: #0b0e16;
+    --glass: color-mix(in srgb, var(--surface) 55%, transparent);
+    --glass-2: color-mix(in srgb, var(--surface-2) 35%, transparent);
+    --glass-strong: color-mix(in srgb, var(--surface) 75%, transparent);
+    --glass-edge: rgba(255, 255, 255, 0.07);
+    --glass-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 40px rgba(0, 0, 0, 0.35);
+    --blob-1: rgba(236, 72, 153, 0.5);
+    --blob-2: rgba(249, 115, 22, 0.42);
+    --blob-3: rgba(124, 58, 237, 0.5);
+    --blob-4: rgba(37, 99, 235, 0.55);
+    --blob-5: rgba(20, 184, 166, 0.42);
+  }
+}
+:root[data-look="glass"][data-theme="dark"] {
+  --page-bg: #0b0e16;
+  --glass: color-mix(in srgb, var(--surface) 55%, transparent);
+  --glass-2: color-mix(in srgb, var(--surface-2) 35%, transparent);
+  --glass-strong: color-mix(in srgb, var(--surface) 75%, transparent);
+  --glass-edge: rgba(255, 255, 255, 0.07);
+  --glass-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 40px rgba(0, 0, 0, 0.35);
+  --blob-1: rgba(236, 72, 153, 0.5);
+  --blob-2: rgba(249, 115, 22, 0.42);
+  --blob-3: rgba(124, 58, 237, 0.5);
+  --blob-4: rgba(37, 99, 235, 0.55);
+  --blob-5: rgba(20, 184, 166, 0.42);
+}
+
+:where([data-look="glass"]) body {
+  background: var(--page-bg);
+}
+/* Overlapping ellipses at staggered heights give the wash a wavy top edge. */
+:where([data-look="glass"]) body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(48% 46% at 4% 102%, var(--blob-1), transparent 70%),
+    radial-gradient(38% 52% at 28% 114%, var(--blob-2), transparent 70%),
+    radial-gradient(40% 40% at 51% 100%, var(--blob-3), transparent 72%),
+    radial-gradient(46% 50% at 76% 112%, var(--blob-4), transparent 70%),
+    radial-gradient(34% 42% at 100% 96%, var(--blob-5), transparent 72%),
+    radial-gradient(90% 30% at 50% 110%, var(--blob-1), transparent 75%);
+}
+
+:where([data-look="glass"]) .panel,
+:where([data-look="glass"]) .mode-switch-tab {
+  background: var(--glass);
+  border-color: var(--glass-edge);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+}
+:where([data-look="glass"]) .mode-switch-tab.active {
+  background: color-mix(in srgb, var(--accent) 12%, var(--glass));
+  border-color: var(--accent);
+}
+:where([data-look="glass"]) .panel-head,
+:where([data-look="glass"]) .gutter,
+:where([data-look="glass"]) .status-line,
+:where([data-look="glass"]) .mb-hint {
+  background: var(--glass-2);
+}
+:where([data-look="glass"]) .style-btn,
+:where([data-look="glass"]) .zoom-btn,
+:where([data-look="glass"]) .zoom-btn:disabled:hover {
+  background: transparent;
+}
+:where([data-look="glass"]) .tree-hud .zoom-toggle,
+:where([data-look="glass"]) .tree-hud .style-toggle,
+:where([data-look="glass"]) .tree-legend {
+  background: var(--glass-strong);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }

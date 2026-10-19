@@ -27,6 +27,9 @@ const ibmPlexSerif = IBM_Plex_Serif({
   style: ["normal", "italic"],
 });
 
+// The translucent "glass" look (see the end of globals.css), parked for now.
+const GLASS_LOOK = false;
+
 export const metadata: Metadata = {
   title: "Syntax Tree Creator",
   description: "A code-editor-grade bracket notation editor for linguistic syntax trees.",
@@ -35,7 +38,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${hostGrotesk.variable} ${boldonse.variable} ${ibmPlexMono.variable} ${ibmPlexSerif.variable}`}>
+    <html
+      lang="en"
+      className={`${hostGrotesk.variable} ${boldonse.variable} ${ibmPlexMono.variable} ${ibmPlexSerif.variable}`}
+      data-look={GLASS_LOOK ? "glass" : undefined}
+    >
       <body>{children}</body>
     </html>
   );

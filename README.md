@@ -43,7 +43,7 @@ lib/tree-editor/
                         component — owns the editor's DOM directly (overlay
                         rendering, cursor/selection, folding, keystrokes)
   notation.ts         — pure parsing: tokenizer, tree parser, bracket scanner
-  layout.ts           — assigns tree node positions for the SVG render
+  layout.ts           — tidy-tree layout: packs subtrees by their contours
   fold-map.ts         — coordinate mapping between the editor's folded view
                         and the tree's always-unfolded view
   types.ts            — shared TypeScript types
@@ -52,8 +52,9 @@ public/
   favicon.svg
 ```
 
-`notation.ts`, `layout.ts`, and `fold-map.ts` have no DOM dependency — they're
-the easiest things to unit test if this grows test coverage later.
+`notation.ts`, `layout.ts`, and `fold-map.ts` have no DOM dependency (`layout.ts`
+measures text with a canvas when one exists, and estimates widths otherwise) —
+they're the easiest things to unit test if this grows test coverage later.
 
 **Why `TreeEditor` isn't a React component:** most of what it does — syncing
 a `<textarea>`'s cursor/selection on every keystroke, splicing text at exact

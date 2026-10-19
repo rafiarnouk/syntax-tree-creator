@@ -60,8 +60,12 @@ export default function MergeBuilderApp({ hidden }: { hidden?: boolean }) {
       </section>
 
       <section className="panel mb-tree-panel">
-        <div className="panel-head">
-          <span className="label">Tree</span>
+        <div className="tree-area" id="mbCanvas" />
+        <div className="tree-hud">
+          <div className="tree-hud-info">
+            <span className="label">Tree</span>
+            <span className="badge" id="mbTreeBadge" />
+          </div>
           <div className="tree-controls">
             <div className="zoom-toggle" id="mbZoomControls" role="group" aria-label="Zoom">
               <button type="button" className="zoom-btn" id="mbZoomOutBtn" aria-label="Zoom out">
@@ -85,10 +89,8 @@ export default function MergeBuilderApp({ hidden }: { hidden?: boolean }) {
                 <DownloadIcon /> SVG
               </button>
             </div>
-            <span className="badge" id="mbTreeBadge" />
           </div>
         </div>
-        <div className="tree-area" id="mbCanvas" />
         <div className="tree-legend" id="mbTreeLegend" hidden>
           <span className="swatch">
             <span className="dot selected" /> Selected node

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { TreeEditor } from "@/lib/tree-editor/editor";
-import { DownloadIcon, HighlighterIcon, MoonIcon, SearchIcon, SunIcon } from "@/components/icons";
+import { DownloadIcon, HighlighterIcon, MoonIcon, SunIcon } from "@/components/icons";
 
 // TreeEditor is a vanilla DOM controller, not a React component — it owns
 // this subtree's DOM directly (overlay/gutter/tree innerHTML, cursor
@@ -76,12 +76,13 @@ export default function TreeEditorApp({ hidden }: { hidden?: boolean }) {
         </section>
 
         <section className="panel">
-          <div className="panel-head">
-            <span className="label">Tree</span>
+          <div className="tree-area" id="treeArea" />
+          <div className="tree-hud">
+            <div className="tree-hud-info">
+              <span className="label">Tree</span>
+              <span className="badge" id="treeBadge" />
+            </div>
             <div className="tree-controls">
-              <span className="zoom-label" aria-hidden="true">
-                <SearchIcon />
-              </span>
               <div className="zoom-toggle" id="zoomControls" role="group" aria-label="Zoom">
                 <button type="button" className="zoom-btn" id="zoomOutBtn" aria-label="Zoom out">
                   −
@@ -113,10 +114,8 @@ export default function TreeEditorApp({ hidden }: { hidden?: boolean }) {
               >
                 <HighlighterIcon />
               </button>
-              <span className="badge" id="treeBadge" />
             </div>
           </div>
-          <div className="tree-area" id="treeArea" />
           <div className="tree-legend" id="treeLegend" hidden>
             <span className="swatch">
               <span className="dot selected" /> Selected node
@@ -134,7 +133,8 @@ export default function TreeEditorApp({ hidden }: { hidden?: boolean }) {
       <footer>
         <div className="shortcuts">
           <kbd>[</kbd> opens a node · <kbd>Tab</kbd>/<kbd>Enter</kbd> advance, collapsing a finished leaf onto one line · ▾/▸ in the gutter
-          folds/unfolds a branch · click a tree node to jump to it · drag the tree to pan, pinch or <kbd>Ctrl</kbd>+scroll to zoom
+          folds/unfolds a branch · <kbd>-&gt;2</kbd> after a word draws a movement arrow to the 2nd word (<kbd>&lt;-2</kbd> from it,{" "}
+          <kbd>&lt;&gt;2</kbd> both ways) · click a tree node to jump to it · drag the tree to pan, pinch or <kbd>Ctrl</kbd>+scroll to zoom
         </div>
       </footer>
     </div>

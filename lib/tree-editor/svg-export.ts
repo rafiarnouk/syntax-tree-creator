@@ -31,6 +31,8 @@ export async function buildExportSvg(live: SVGSVGElement): Promise<SVGSVGElement
       fontFamilies.add(cs.fontFamily);
     } else if (tag === "line" || tag === "path" || tag === "polygon") {
       cloneEl.setAttribute("stroke", cs.stroke);
+      cloneEl.setAttribute("fill", cs.fill);
+      cloneEl.removeAttribute("class");
     } else if (
       tag === "rect" &&
       (liveEl.classList.contains("tree-node-highlight") ||

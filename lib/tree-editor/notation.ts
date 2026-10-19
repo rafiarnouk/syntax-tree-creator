@@ -232,3 +232,33 @@ export function findEmptySlots(text: string): EmptySlot[] {
   }
   return slots;
 }
+
+export interface MovementArrow {
+  at: number; // the token's offset; the arrow starts at the terminal right before it
+  target: number; // 1-based terminal column
+  head: "to" | "from" | "both";
+}
+
+const ARROW_TOKEN = /^(->|<-|<>)(\d+)$/;
+
+export function isArrowToken(text: string): boolean {
+  return ARROW_TOKEN.test(text);
+}
+
+// Movement arrows as ironcreek's jsSyntaxTree writes them: "->2" in a node
+// draws an arrow from there to the 2nd terminal ("<-2" points back, "<>2" both
+// ways). Returns a copy of the tree with those tokens taken out.
+export function extractArrows(root: TreeNode): { tree: TreeNode; arrows: MovementArrow[] } {
+  const arrows: MovementArrow[] = [];
+  const strip = (node: TreeNode): TreeNode => {
+    if (node.kind === "leaf") return { ...node };
+    const children: TreeNode[] = [];
+    for (const c of node.children) {
+      const m = c.kind === "leaf" ? ARROW_TOKEN.exec(c.text) : null;
+      if (m) arrows.push({ at: c.start, target: +m[2], head: m[1] === "->" ? "to" : m[1] === "<-" ? "from" : "both" });
+      else children.push(strip(c));
+    }
+    return { ...node, children };
+  };
+  return { tree: strip(root), arrows };
+}
