@@ -2,7 +2,7 @@
 
 import type { BracketScan, EmptySlot, MatchSet, Token, TreeNode } from "./types";
 
-export const INDENT_UNIT = "    "; // 4 spaces per nesting level
+export const INDENT_UNIT = "  "; // 2 spaces per nesting level
 
 export function tokenize(text: string): Token[] {
   const tokens: Token[] = [];

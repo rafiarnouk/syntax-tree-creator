@@ -18,6 +18,7 @@ import {
   tokenize,
 } from "./notation";
 import { layout, LEVEL_H, NODE_GAP } from "./layout";
+import { EditHistory, type EditKind, type EditState } from "./history";
 import { buildExportSvg } from "./svg-export";
 import { bindThemeToggle } from "./theme";
 import { TreeViewport } from "./viewport";
@@ -26,6 +27,7 @@ import type { BracketScan, FoldableNode, FoldRecord, LabelOption, MatchSet, Tree
 import { escapeHtml, lineOf } from "./utils";
 
 const UNIT = INDENT_UNIT;
+const OUTDENT = new RegExp(`^ {1,${UNIT.length}}`);
 const DRAFT_KEY = "syntax-tree-creator-draft";
 const FOLDS_KEY = "syntax-tree-creator-folds";
 const STYLE_KEY = "syntax-tree-creator-style";
@@ -80,7 +82,7 @@ const LABELS: LabelOption[] = [
 ];
 
 const SAMPLE =
-  "[TP\n    [DP_1\n        [D The]\n        [NP dog]\n    ]\n    [T\n        [T might]\n        [VP\n            [V chase]\n            [DP_2\n                [D the]\n                [NP cat]\n            ]\n        ]\n    ]\n]";
+  "[TP\n  [DP_1\n    [D The]\n    [NP dog]\n  ]\n  [T\n    [T might]\n    [VP\n      [V chase]\n      [DP_2\n        [D the]\n        [NP cat]\n      ]\n    ]\n  ]\n]";
 const SAMPLE_SENTENCE = "The dog might chase the cat.";
 
 interface TreeSpan {
@@ -119,6 +121,8 @@ export class TreeEditor {
   private idsByTreeNode = new Map<TreeNode, string[]>();
   private folds: FoldRecord[] = [];
   private prevValue = "";
+  private history = new EditHistory({ value: "", selStart: 0, selEnd: 0, folds: [] });
+  private pendingKind: EditKind = null;
   private treeStyle: TreeStyle = "simple";
   private highlightsEnabled = true;
 
@@ -186,6 +190,7 @@ export class TreeEditor {
     this.ta.value = saved || "";
     this.folds = validFolds(this.ta.value, this.folds);
     this.prevValue = this.ta.value;
+    this.history = new EditHistory(this.editState());
     this.renderStyleToggle();
     bindThemeToggle(this.themeToggleEl);
     this.applyHighlightToggle();
@@ -305,12 +310,29 @@ export class TreeEditor {
 
     this.checkAutocomplete();
     this.prevValue = text;
+    this.history.record(this.editState(), this.pendingKind);
+    this.pendingKind = null;
     try {
       localStorage.setItem(DRAFT_KEY, text);
       localStorage.setItem(FOLDS_KEY, JSON.stringify(this.folds));
     } catch {
       /* private browsing / storage disabled */
     }
+  }
+
+  private editState(): EditState {
+    return { value: this.ta.value, selStart: this.ta.selectionStart, selEnd: this.ta.selectionEnd, folds: this.folds };
+  }
+
+  private stepHistory(redo: boolean): void {
+    const state = redo ? this.history.redo() : this.history.undo();
+    if (!state) return;
+    this.hideAutocomplete();
+    this.ta.value = state.value;
+    this.folds = state.folds;
+    this.prevValue = state.value;
+    this.ta.setSelectionRange(state.selStart, state.selEnd);
+    this.update();
   }
 
   private setValue(newVal: string, selStart: number, selEnd?: number): void {
@@ -482,8 +504,10 @@ export class TreeEditor {
       const x = node.x ?? 0;
       maxDepth = Math.max(maxDepth, depth);
       const triangle = node.kind === "phrase" && isTriangleNode(node);
-      const leaf = isLeaf(node) && !triangle;
-      if (leaf) terminals.push({ x, depth, at: node.start });
+      const terminal = isLeaf(node) && !triangle;
+      // A childless node with a label, e.g. [T_1], draws just its label.
+      const leaf = terminal && !(node.kind === "phrase" && node.label);
+      if (terminal) terminals.push({ x, depth, at: node.start });
       if (parent) {
         lines.push({ x1: parent.x ?? 0, y1: parent.depth ?? 0, x2: x, y2: depth, depth });
         this.parentByTreeNode.set(node, parent);
@@ -895,7 +919,7 @@ export class TreeEditor {
     const lineEndSearch = value.indexOf("\n", se);
     const lineEnd = lineEndSearch === -1 ? value.length : lineEndSearch;
     const segment = value.slice(lineStart, lineEnd);
-    const lines = segment.split("\n").map((l) => (outdent ? l.replace(/^ {1,4}/, "") : UNIT + l));
+    const lines = segment.split("\n").map((l) => (outdent ? l.replace(OUTDENT, "") : UNIT + l));
     const newSegment = lines.join("\n");
     const newVal = value.slice(0, lineStart) + newSegment + value.slice(lineEnd);
     this.setValue(newVal, lineStart, lineEnd + (newSegment.length - segment.length));
@@ -905,7 +929,7 @@ export class TreeEditor {
     const value = this.ta.value;
     const ss = this.ta.selectionStart;
     const lineStart = value.lastIndexOf("\n", ss - 1) + 1;
-    const m = /^ {1,4}/.exec(value.slice(lineStart));
+    const m = OUTDENT.exec(value.slice(lineStart));
     if (m) this.setValue(value.slice(0, lineStart) + value.slice(lineStart + m[0].length), Math.max(lineStart, ss - m[0].length));
   }
 
@@ -1242,7 +1266,23 @@ export class TreeEditor {
       }
       this.update();
     });
-    this.ta.addEventListener("beforeinput", (e) => this.guardFolds(e));
+    this.ta.addEventListener("beforeinput", (e) => {
+      if (e.inputType === "historyUndo" || e.inputType === "historyRedo") {
+        e.preventDefault();
+        this.stepHistory(e.inputType === "historyRedo");
+        return;
+      }
+      this.history.record(this.editState(), null);
+      this.pendingKind =
+        e.inputType === "insertText"
+          ? /^\s+$/.test(e.data ?? "")
+            ? "space"
+            : "word"
+          : e.inputType === "deleteContentBackward" || e.inputType === "deleteContentForward"
+            ? "delete"
+            : null;
+      this.guardFolds(e);
+    });
     this.ta.addEventListener("copy", (e) => this.copyExpanded(e, false));
     this.ta.addEventListener("cut", (e) => this.copyExpanded(e, true));
     this.ta.addEventListener("mouseup", () => this.coverFolds());
@@ -1343,6 +1383,13 @@ export class TreeEditor {
   }
 
   private onKeyDown(e: KeyboardEvent): void {
+    const key = e.key.toLowerCase();
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && (key === "z" || (key === "y" && e.ctrlKey && !e.metaKey))) {
+      e.preventDefault();
+      this.stepHistory(key === "y" || e.shiftKey);
+      return;
+    }
+    this.history.record(this.editState(), null);
     if (this.folds.length && NAV_KEYS.has(e.key)) {
       const { selectionStart, selectionEnd } = this.ta;
       setTimeout(() => this.snapOutOfFolds(selectionStart, selectionEnd));
