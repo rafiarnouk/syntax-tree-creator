@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { MergeBuilder } from "@/lib/tree-editor/merge-builder";
-import { DownloadIcon, MoonIcon, SunIcon } from "@/components/icons";
+import { DownloadIcon, SparkIcon } from "@/components/icons";
 
 // Same mounting pattern as TreeEditorApp — MergeBuilder is a vanilla DOM
 // controller, not a React component, for the same reasons (see README.md).
@@ -18,25 +18,14 @@ export default function MergeBuilderApp({ hidden }: { hidden?: boolean }) {
 
   return (
     <div className="app" ref={rootRef} hidden={hidden}>
-      <header>
-        <div>
-          <h1>Syntax Tree Creator</h1>
-          <p className="tagline">
-            Build a tree bottom-up: lay out the words as leaves, then drag each node onto its neighbor to merge them,
-            again and again, until one remains.
-          </p>
-        </div>
-        <div className="header-controls">
-          <div className="style-toggle" id="mbThemeToggle" role="group" aria-label="Color theme">
-            <button type="button" className="style-btn" data-theme-choice="light">
-              <SunIcon /> Light
-            </button>
-            <button type="button" className="style-btn" data-theme-choice="dark">
-              <MoonIcon /> Dark
-            </button>
-          </div>
-          <button className="reset-btn" id="mbResetBtn" type="button">
-            Load example
+      <header className="doc-bar">
+        <p className="doc-hint">
+          Lay out the words as leaves, then drag each node onto its neighbor to merge them, again and again, until one remains.
+        </p>
+        <div className="doc-actions">
+          <button className="btn ghost" id="mbResetBtn" type="button" title="Load the example sentence">
+            <SparkIcon size={15} />
+            <span>Example</span>
           </button>
         </div>
       </header>

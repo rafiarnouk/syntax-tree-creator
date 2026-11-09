@@ -2,7 +2,9 @@
 
 import { useEffect, useRef } from "react";
 import { TreeEditor } from "@/lib/tree-editor/editor";
-import { DownloadIcon, HighlighterIcon, MoonIcon, SunIcon } from "@/components/icons";
+import DocumentBar from "@/components/DocumentBar";
+import { DownloadIcon, HighlighterIcon } from "@/components/icons";
+import { useWorkspace } from "@/components/Workspace";
 
 // TreeEditor is a vanilla DOM controller, not a React component — it owns
 // this subtree's DOM directly (overlay/gutter/tree innerHTML, cursor
@@ -10,46 +12,36 @@ import { DownloadIcon, HighlighterIcon, MoonIcon, SunIcon } from "@/components/i
 // just mounts it once; the `mounted` guard is needed because React's Strict
 // Mode runs effects twice in development, which would otherwise attach every
 // event listener twice.
-export default function TreeEditorApp({ hidden }: { hidden?: boolean }) {
+export default function TreeEditorApp({ hidden, onReady }: { hidden?: boolean; onReady: (editor: TreeEditor) => void }) {
+  const { save, session } = useWorkspace();
   const rootRef = useRef<HTMLDivElement>(null);
   const mounted = useRef(false);
 
   useEffect(() => {
     if (!rootRef.current || mounted.current) return;
     mounted.current = true;
-    new TreeEditor(rootRef.current);
-  }, []);
+    onReady(new TreeEditor(rootRef.current));
+  }, [onReady]);
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+      e.preventDefault();
+      if (session.getState().status !== "blank") save();
+    }
+  };
 
   return (
-    <div className="app" ref={rootRef} hidden={hidden}>
-      <header>
-        <div>
-          <h1>Syntax Tree Creator</h1>
-          <p className="tagline">
-            Build a tree top-down: type <kbd>[</kbd> to open a node, fill in its label and content, press <kbd>Tab</kbd> to move to the
-            next slot.
-          </p>
-        </div>
-        <div className="header-controls">
-          <div className="style-toggle" id="themeToggle" role="group" aria-label="Color theme">
-            <button type="button" className="style-btn" data-theme-choice="light">
-              <SunIcon /> Light
-            </button>
-            <button type="button" className="style-btn" data-theme-choice="dark">
-              <MoonIcon /> Dark
-            </button>
-          </div>
-          <button className="reset-btn" id="resetBtn" type="button">
-            Load example
-          </button>
-        </div>
-      </header>
+    <div className="app" ref={rootRef} hidden={hidden} onKeyDown={onKeyDown}>
+      <DocumentBar />
 
       <div className="workspace">
         <section className="panel">
           <div className="panel-head">
             <span className="label">Bracket notation</span>
             <div className="tree-controls">
+              <button className="reset-btn quiet" id="compressBtn" type="button" title="Put the whole tree on one line">
+                Compress
+              </button>
               <button className="reset-btn" id="formatBtn" type="button" title="Reformat to the standard indentation (collapses leaves, expands everything else)">
                 Auto-indent
               </button>

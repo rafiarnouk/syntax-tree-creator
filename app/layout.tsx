@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Boldonse, Host_Grotesk, IBM_Plex_Mono, IBM_Plex_Serif } from "next/font/google";
+import Workspace from "@/components/Workspace";
+import { THEME_SCRIPT } from "@/lib/tree-editor/theme";
 import "./globals.css";
 
 const hostGrotesk = Host_Grotesk({
@@ -42,8 +44,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       lang="en"
       className={`${hostGrotesk.variable} ${boldonse.variable} ${ibmPlexMono.variable} ${ibmPlexSerif.variable}`}
       data-look={GLASS_LOOK ? "glass" : undefined}
+      data-theme="light"
+      suppressHydrationWarning
     >
-      <body>{children}</body>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
+      <body>
+        <Workspace>{children}</Workspace>
+      </body>
     </html>
   );
 }

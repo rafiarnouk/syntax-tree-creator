@@ -96,6 +96,12 @@ export function formatTree(node: TreeNode, depth = 0): string {
   return opening + "\n" + childLines.join("\n") + "\n" + indent + "]";
 }
 
+// The whole tree on one line, e.g. "[S [NP the dog] [VP barks]]".
+export function compactTree(node: TreeNode): string {
+  if (node.kind === "leaf") return node.text;
+  return "[" + [node.label, ...node.children.map(compactTree)].filter(Boolean).join(" ") + "]";
+}
+
 export function scanBrackets(text: string): BracketScan {
   const stack: number[] = [];
   const brackets: BracketScan["brackets"] = [];

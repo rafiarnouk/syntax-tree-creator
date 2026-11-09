@@ -52,7 +52,10 @@ export class TreeViewport {
     controls.reset.addEventListener("click", () => this.setZoom(1));
     controls.fit.addEventListener("click", () => this.fit());
     this.bindGestures();
-    new ResizeObserver(() => this.syncPannable()).observe(area);
+    new ResizeObserver(() => {
+      if (this.svg) this.show(this.svg, this.w, this.h);
+      else this.syncPannable();
+    }).observe(area);
     this.syncButtons();
   }
 
@@ -73,6 +76,14 @@ export class TreeViewport {
   clear(): void {
     this.svg = null;
     this.syncPannable();
+  }
+
+  // Back to the starting zoom, for when a different tree is about to show.
+  reset(): void {
+    this.zoom = this.preferred = 1;
+    this.following = true;
+    this.area.scrollLeft = this.area.scrollTop = 0;
+    this.syncButtons();
   }
 
   private fitZoom(): number | null {

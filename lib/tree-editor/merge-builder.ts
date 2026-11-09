@@ -10,7 +10,6 @@ import { LEVEL_H, NODE_GAP } from "./layout";
 import { layoutForest } from "./merge-layout";
 import { collectWords, isLeaf, isTriangleNode, stripQuotes } from "./notation";
 import { buildExportSvg } from "./svg-export";
-import { bindThemeToggle } from "./theme";
 import { TreeViewport } from "./viewport";
 import type { LeafNode, PhraseNode, TreeNode } from "./types";
 import { escapeHtml } from "./utils";
@@ -63,7 +62,6 @@ const REMOVE_SVG =
   'stroke-linecap="round" aria-hidden="true"><path d="M2 2 L8 8"/><path d="M8 2 L2 8"/></svg>';
 
 export class MergeBuilder {
-  private themeToggleEl: HTMLElement;
   private resetBtn: HTMLButtonElement;
   private refInput: HTMLInputElement;
   private splitBtn: HTMLButtonElement;
@@ -101,7 +99,6 @@ export class MergeBuilder {
   private activeDominated = new Set<string>();
 
   constructor(root: HTMLElement) {
-    this.themeToggleEl = root.querySelector<HTMLElement>("#mbThemeToggle")!;
     this.resetBtn = root.querySelector<HTMLButtonElement>("#mbResetBtn")!;
     this.refInput = root.querySelector<HTMLInputElement>("#mbRefSentence")!;
     this.splitBtn = root.querySelector<HTMLButtonElement>("#mbSplitBtn")!;
@@ -127,7 +124,6 @@ export class MergeBuilder {
   // ---------- boot ----------
 
   private boot(): void {
-    bindThemeToggle(this.themeToggleEl);
     this.renderAll();
     document.fonts?.ready.then(() => this.renderCanvas());
 

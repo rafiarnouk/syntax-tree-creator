@@ -2,7 +2,7 @@ import { buildFoldMap, mapNodeToRaw, remapFolds, validFolds } from "./fold-map";
 import {
   buildPreview,
   collectWords,
-  extractArrows,
+  compactTree,
   findEmptySlots,
   findEnclosingBracket,
   findMatchSet,
@@ -10,19 +10,15 @@ import {
   INDENT_UNIT,
   isArrowToken,
   isLeaf,
-  isTriangleNode,
   labelEnd,
   parseTree,
   scanBrackets,
-  stripQuotes,
   tokenize,
 } from "./notation";
-import { layout, LEVEL_H, NODE_GAP } from "./layout";
 import { EditHistory, type EditKind, type EditState } from "./history";
 import { buildExportSvg } from "./svg-export";
-import { bindThemeToggle } from "./theme";
+import { drawTree, type TreeSpan, type TreeStyle } from "./tree-render";
 import { TreeViewport } from "./viewport";
-import type { MovementArrow } from "./notation";
 import type { BracketScan, FoldableNode, FoldRecord, LabelOption, MatchSet, TreeNode } from "./types";
 import { escapeHtml, lineOf } from "./utils";
 
@@ -33,8 +29,6 @@ const FOLDS_KEY = "syntax-tree-creator-folds";
 const STYLE_KEY = "syntax-tree-creator-style";
 const REF_KEY = "syntax-tree-creator-reference";
 const HIGHLIGHTS_KEY = "syntax-tree-creator-highlights";
-
-type TreeStyle = "simple" | "fancy";
 
 // Archived: the Simple/Fancy toggle is gone from the UI, so the tree always
 // draws "simple". Flip this (and restore #styleToggle) to bring it back.
@@ -84,12 +78,7 @@ const LABELS: LabelOption[] = [
 const SAMPLE =
   "[TP\n  [DP_1\n    [D The]\n    [NP dog]\n  ]\n  [T\n    [T might]\n    [VP\n      [V chase]\n      [DP_2\n        [D the]\n        [NP cat]\n      ]\n    ]\n  ]\n]";
 const SAMPLE_SENTENCE = "The dog might chase the cat.";
-
-interface TreeSpan {
-  start: number;
-  end: number;
-  id: string;
-}
+export const EXAMPLE_TREE = { source: SAMPLE, sentence: SAMPLE_SENTENCE };
 
 export class TreeEditor {
   private ta: HTMLTextAreaElement;
@@ -102,12 +91,12 @@ export class TreeEditor {
   private treeLegendEl: HTMLElement;
   private acEl: HTMLElement;
   private styleToggleEl: HTMLElement | null;
-  private themeToggleEl: HTMLElement;
   private refInput: HTMLInputElement;
   private viewport: TreeViewport;
   private exportPngBtn: HTMLButtonElement;
   private exportSvgBtn: HTMLButtonElement;
   private formatBtn: HTMLButtonElement;
+  private compressBtn: HTMLButtonElement;
   private highlightToggleBtn: HTMLButtonElement;
 
   private acOpen = false;
@@ -126,6 +115,8 @@ export class TreeEditor {
   private treeStyle: TreeStyle = "simple";
   private highlightsEnabled = true;
 
+  onChange: (() => void) | null = null;
+
   constructor(root: HTMLElement) {
     this.ta = root.querySelector<HTMLTextAreaElement>("#editor")!;
     this.overlay = root.querySelector<HTMLPreElement>("#overlay")!;
@@ -137,7 +128,6 @@ export class TreeEditor {
     this.treeLegendEl = root.querySelector<HTMLElement>("#treeLegend")!;
     this.acEl = root.querySelector<HTMLElement>("#autocomplete")!;
     this.styleToggleEl = root.querySelector<HTMLElement>("#styleToggle");
-    this.themeToggleEl = root.querySelector<HTMLElement>("#themeToggle")!;
     this.refInput = root.querySelector<HTMLInputElement>("#refSentence")!;
     this.viewport = new TreeViewport(this.treeArea, {
       out: root.querySelector<HTMLButtonElement>("#zoomOutBtn")!,
@@ -148,15 +138,50 @@ export class TreeEditor {
     this.exportPngBtn = root.querySelector<HTMLButtonElement>("#exportPngBtn")!;
     this.exportSvgBtn = root.querySelector<HTMLButtonElement>("#exportSvgBtn")!;
     this.formatBtn = root.querySelector<HTMLButtonElement>("#formatBtn")!;
+    this.compressBtn = root.querySelector<HTMLButtonElement>("#compressBtn")!;
     this.highlightToggleBtn = root.querySelector<HTMLButtonElement>("#highlightToggleBtn")!;
 
     this.bindEvents();
-    this.boot(root);
+    this.boot();
+  }
+
+  // ---------- document ----------
+
+  // The full text, with any collapsed nodes expanded.
+  get source(): string {
+    return buildFoldMap(this.ta.value, this.folds).text;
+  }
+
+  get sentence(): string {
+    return this.refInput.value;
+  }
+
+  // Replaces the whole document, so undo can't step back into the previous one.
+  load(source: string, sentence: string): void {
+    this.hideAutocomplete();
+    this.folds = [];
+    this.ta.value = source;
+    this.prevValue = source;
+    this.ta.setSelectionRange(source.length, source.length);
+    this.refInput.value = sentence;
+    this.persistSentence();
+    this.history = new EditHistory(this.editState());
+    this.viewport.reset();
+    this.ta.focus();
+    this.update();
+  }
+
+  private persistSentence(): void {
+    try {
+      localStorage.setItem(REF_KEY, this.refInput.value);
+    } catch {
+      /* private browsing / storage disabled */
+    }
   }
 
   // ---------- boot ----------
 
-  private boot(root: HTMLElement): void {
+  private boot(): void {
     let saved: string | null = null;
     try {
       saved = localStorage.getItem(DRAFT_KEY);
@@ -192,31 +217,15 @@ export class TreeEditor {
     this.prevValue = this.ta.value;
     this.history = new EditHistory(this.editState());
     this.renderStyleToggle();
-    bindThemeToggle(this.themeToggleEl);
     this.applyHighlightToggle();
     this.update();
     this.ta.setSelectionRange(this.ta.value.length, this.ta.value.length);
     // Tree layout measures text, so redo it once the web font is in.
     document.fonts?.ready.then(() => this.update());
 
-    root.querySelector<HTMLButtonElement>("#resetBtn")!.addEventListener("click", () => {
-      this.folds = [];
-      this.setValue(SAMPLE, SAMPLE.length);
-      this.refInput.value = SAMPLE_SENTENCE;
-      try {
-        localStorage.setItem(REF_KEY, SAMPLE_SENTENCE);
-      } catch {
-        /* private browsing / storage disabled */
-      }
-      this.ta.focus();
-    });
-
     this.refInput.addEventListener("input", () => {
-      try {
-        localStorage.setItem(REF_KEY, this.refInput.value);
-      } catch {
-        /* private browsing / storage disabled */
-      }
+      this.persistSentence();
+      this.onChange?.();
     });
 
     this.styleToggleEl?.addEventListener("click", (e) => {
@@ -318,6 +327,7 @@ export class TreeEditor {
     } catch {
       /* private browsing / storage disabled */
     }
+    this.onChange?.();
   }
 
   private editState(): EditState {
@@ -464,133 +474,23 @@ export class TreeEditor {
     this.exportPngBtn.disabled = true;
     this.exportSvgBtn.disabled = true;
     this.formatBtn.disabled = true;
+    this.compressBtn.disabled = true;
   }
 
   private renderTreeView(parsed: TreeNode, map: ReturnType<typeof buildFoldMap>["map"]): void {
     this.exportPngBtn.disabled = false;
     this.exportSvgBtn.disabled = false;
     this.formatBtn.disabled = this.folds.length > 0;
+    this.compressBtn.disabled = false;
     this.formatBtn.title = this.folds.length > 0 ? FORMAT_BTN_FOLDED_TITLE : FORMAT_BTN_TITLE;
-    const { tree: root, arrows } = extractArrows(parsed);
-    const treeW = layout(root);
-    this.treeSpans = [];
-    this.treeNodeById = new Map();
-    this.parentByTreeNode = new Map();
-    this.idsByTreeNode = new Map();
-    const addId = (node: TreeNode, id: string) => {
-      this.treeNodeById.set(id, node);
-      const ids = this.idsByTreeNode.get(node) ?? [];
-      ids.push(id);
-      this.idsByTreeNode.set(node, ids);
-    };
-    interface DrawNode {
-      x: number;
-      depth: number;
-      leaf: boolean;
-      label: string;
-      text: string;
-      start: number;
-      end: number;
-      id: string;
-    }
-    const nodes: DrawNode[] = [];
-    const lines: { x1: number; y1: number; x2: number; y2: number; depth: number }[] = [];
-    const triangles: { x: number; apexDepth: number; baseDepth: number; halfWidth: number; depth: number }[] = [];
-    const terminals: { x: number; depth: number; at: number }[] = [];
-    let maxDepth = 0;
-
-    const walk = (node: TreeNode, parent: TreeNode | null): void => {
-      const depth = node.depth ?? 0;
-      const x = node.x ?? 0;
-      maxDepth = Math.max(maxDepth, depth);
-      const triangle = node.kind === "phrase" && isTriangleNode(node);
-      const terminal = isLeaf(node) && !triangle;
-      // A childless node with a label, e.g. [T_1], draws just its label.
-      const leaf = terminal && !(node.kind === "phrase" && node.label);
-      if (terminal) terminals.push({ x, depth, at: node.start });
-      if (parent) {
-        lines.push({ x1: parent.x ?? 0, y1: parent.depth ?? 0, x2: x, y2: depth, depth });
-        this.parentByTreeNode.set(node, parent);
-      }
-      const id = "n" + this.treeSpans.length;
-      const raw = mapNodeToRaw(node, map);
-      this.treeSpans.push({ start: raw.start, end: raw.end, id });
-      addId(node, id);
-      nodes.push({
-        x,
-        depth,
-        leaf,
-        label: node.kind === "phrase" ? node.label : "",
-        text: node.kind === "leaf" ? stripQuotes(node.text) : "",
-        start: raw.start,
-        end: raw.end,
-        id,
-      });
-
-      if (triangle && node.kind === "phrase") {
-        const baseDepth = depth + 1;
-        maxDepth = Math.max(maxDepth, baseDepth);
-        const halfWidth = (node.triangleWidth ?? 0) / 2;
-        triangles.push({ x, apexDepth: depth, baseDepth, halfWidth, depth: baseDepth });
-        const first = node.children[0];
-        terminals.push({ x, depth: baseDepth, at: first.start });
-        const last = node.children[node.children.length - 1];
-        const rawSpan = mapNodeToRaw({ ...first, end: last.end }, map);
-        const tid = "n" + this.treeSpans.length;
-        this.treeSpans.push({ start: rawSpan.start, end: rawSpan.end, id: tid });
-        addId(node, tid);
-        nodes.push({
-          x,
-          depth: baseDepth,
-          leaf: true,
-          label: "",
-          text: collectWords(node).map(stripQuotes).join(" "),
-          start: rawSpan.start,
-          end: rawSpan.end,
-          id: tid,
-        });
-        return;
-      }
-      if (!leaf && node.kind === "phrase") for (const c of node.children) walk(c, node);
-    };
-    walk(root, null);
-
-    const PAD = 44;
-    const w = treeW + PAD * 2;
-    const arrowSvg = this.renderArrows(arrows, terminals, PAD);
-    const h = Math.max((maxDepth + 1) * LEVEL_H + PAD * 1.4, arrowSvg.bottom + PAD * 0.6);
-    const simple = this.treeStyle === "simple";
+    const drawing = drawTree(parsed, { style: this.treeStyle, toRaw: (node) => mapNodeToRaw(node, map) });
+    this.treeSpans = drawing.spans;
+    this.treeNodeById = drawing.nodeById;
+    this.parentByTreeNode = drawing.parentByNode;
+    this.idsByTreeNode = drawing.idsByNode;
+    const { w, h } = drawing;
     const zoom = this.viewport.scale;
-
-    let svg = `<svg class="tree-svg" viewBox="0 0 ${w} ${h}" width="${w * zoom}" height="${h * zoom}">`;
-    for (const l of lines) {
-      const x1 = l.x1 + PAD;
-      const y1 = l.y1 * LEVEL_H + PAD + NODE_GAP;
-      const x2 = l.x2 + PAD;
-      const y2 = l.y2 * LEVEL_H + PAD - NODE_GAP;
-      if (simple) {
-        svg += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="var(--tree-line)" stroke-width="1"/>`;
-      } else {
-        svg += `<path d="M ${x1} ${y1} C ${x1} ${y1 + 28}, ${x2} ${y2 - 22}, ${x2} ${y2}" fill="none" stroke="var(--depth-${l.depth % 5})" stroke-width="1.6" opacity=".75"/>`;
-      }
-    }
-    for (const t of triangles) {
-      const apexX = t.x + PAD;
-      const apexY = t.apexDepth * LEVEL_H + PAD + NODE_GAP;
-      const baseY = t.baseDepth * LEVEL_H + PAD - NODE_GAP;
-      const baseX1 = t.x + PAD - t.halfWidth;
-      const baseX2 = t.x + PAD + t.halfWidth;
-      const stroke = simple ? "var(--tree-line)" : `var(--depth-${t.depth % 5})`;
-      svg += `<polygon points="${apexX},${apexY} ${baseX1},${baseY} ${baseX2},${baseY}" fill="none" stroke="${stroke}" stroke-width="${simple ? 1 : 1.6}"${simple ? "" : ' opacity=".75"'}/>`;
-    }
-    for (const n of nodes) {
-      const colorCls = simple ? (n.leaf ? "simple-leaf" : "simple-node") : "d" + (n.depth % 5);
-      const cls = (n.leaf ? "leaf" : "label") + " " + colorCls;
-      const labelMarkup = n.leaf ? escapeHtml(n.text) : this.renderLabelMarkup(n.label || "∅");
-      svg += `<text id="${n.id}" class="tree-node ${cls}" data-start="${n.start}" data-end="${n.end}" x="${n.x + PAD}" y="${n.depth * LEVEL_H + PAD}" text-anchor="middle" dominant-baseline="central">${labelMarkup}</text>`;
-    }
-    svg += arrowSvg.markup + "</svg>";
-    this.treeArea.innerHTML = svg;
+    this.treeArea.innerHTML = `<svg class="tree-svg" viewBox="0 0 ${w} ${h}" width="${w * zoom}" height="${h * zoom}">${drawing.markup}</svg>`;
     this.viewport.show(this.treeArea.querySelector<SVGSVGElement>("svg.tree-svg")!, w, h);
 
     this.treeArea.querySelectorAll<SVGTextElement>(".tree-node").forEach((el) => {
@@ -603,70 +503,8 @@ export class TreeEditor {
       });
     });
 
-    const phraseCount = nodes.filter((n) => !n.leaf).length;
-    const leafCount = nodes.filter((n) => n.leaf).length;
+    const { phraseCount, leafCount } = drawing;
     this.treeBadge.textContent = `${phraseCount} ${phraseCount === 1 ? "node" : "nodes"} · ${leafCount} ${leafCount === 1 ? "leaf" : "leaves"}`;
-  }
-
-  // Each arrow dips below the lowest word it spans; arrows that overlap a
-  // shorter one already drawn go below that one too.
-  private renderArrows(
-    arrows: MovementArrow[],
-    terminals: { x: number; depth: number; at: number }[],
-    pad: number,
-  ): { markup: string; bottom: number } {
-    const DIP = 22;
-    const STACK = 12;
-    const HEAD = 7;
-    const wordBottom = (i: number) => terminals[i].depth * LEVEL_H + pad + NODE_GAP;
-
-    const spans: { from: number; to: number; head: MovementArrow["head"] }[] = [];
-    for (const a of arrows) {
-      let from = 0;
-      terminals.forEach((t, i) => {
-        if (t.at < a.at) from = i;
-      });
-      const to = a.target - 1;
-      if (to < 0 || to >= terminals.length || to === from) continue;
-      spans.push({ from, to, head: a.head });
-    }
-    spans.sort((a, b) => Math.abs(a.to - a.from) - Math.abs(b.to - b.from));
-
-    const placed: { lo: number; hi: number; bottom: number }[] = [];
-    let markup = "";
-    let maxBottom = 0;
-    for (const s of spans) {
-      const lo = Math.min(s.from, s.to);
-      const hi = Math.max(s.from, s.to);
-      let bottom = 0;
-      for (let i = lo; i <= hi; i++) bottom = Math.max(bottom, wordBottom(i) + DIP);
-      for (const p of placed) if (p.lo <= hi && lo <= p.hi) bottom = Math.max(bottom, p.bottom + STACK);
-      placed.push({ lo, hi, bottom });
-      maxBottom = Math.max(maxBottom, bottom);
-
-      const headAtFrom = s.head !== "to";
-      const headAtTo = s.head !== "from";
-      const x1 = terminals[s.from].x + pad;
-      const x2 = terminals[s.to].x + pad;
-      const tip1 = wordBottom(s.from);
-      const tip2 = wordBottom(s.to);
-      const y1 = tip1 + (headAtFrom ? HEAD : 0);
-      const y2 = tip2 + (headAtTo ? HEAD : 0);
-      // A cubic with both control points at c bottoms out at (y1 + y2) / 8 + 0.75c.
-      const c = (bottom - (y1 + y2) / 8) / 0.75;
-      markup += `<path class="tree-arrow" d="M ${x1} ${y1} C ${x1} ${c}, ${x2} ${c}, ${x2} ${y2}" fill="none" stroke="var(--tree-arrow)" stroke-width="1.2"/>`;
-      const head = (x: number, tip: number) =>
-        `<polygon class="tree-arrow" points="${x},${tip} ${x - HEAD / 2},${tip + HEAD} ${x + HEAD / 2},${tip + HEAD}" fill="var(--tree-arrow)" stroke="none"/>`;
-      if (headAtFrom) markup += head(x1, tip1);
-      if (headAtTo) markup += head(x2, tip2);
-    }
-    return { markup, bottom: maxBottom };
-  }
-
-  private renderLabelMarkup(label: string): string {
-    const m = /^(.+)_([^_\s]+)$/.exec(label);
-    if (!m) return escapeHtml(label);
-    return `${escapeHtml(m[1])}<tspan dy="0.28em" font-size="0.72em">${escapeHtml(m[2])}</tspan>`;
   }
 
   // All nodes a sister of `node` dominates (plus the sisters themselves) —
@@ -1308,6 +1146,7 @@ export class TreeEditor {
     this.exportPngBtn.addEventListener("click", () => this.exportPng());
     this.exportSvgBtn.addEventListener("click", () => this.exportSvg());
     this.formatBtn.addEventListener("click", () => this.formatDocument());
+    this.compressBtn.addEventListener("click", () => this.compressDocument());
   }
 
   // ---------- export ----------
@@ -1374,6 +1213,18 @@ export class TreeEditor {
     this.folds = [];
     const formatted = formatTree(tree);
     this.setValue(formatted, formatted.length);
+  }
+
+  // Collapsed nodes are expanded first, so nothing they hide is lost.
+  private compressDocument(): void {
+    const value = buildFoldMap(this.ta.value, this.folds).text;
+    if (!scanBrackets(value).balanced) return;
+    const tree = parseTree(tokenize(value));
+    if (!tree) return;
+    this.folds = [];
+    const compact = compactTree(tree);
+    this.ta.focus();
+    this.setValue(compact, compact.length);
   }
 
   private syncScroll(): void {

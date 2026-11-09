@@ -21,7 +21,7 @@ npm run lint    # eslint
 
 ## Deploy
 
-No server data, no environment variables — on [Vercel](https://vercel.com):
+No environment variables needed — on [Vercel](https://vercel.com):
 
 1. Push this repo to GitHub.
 2. In the Vercel dashboard, **Add New → Project**, import the repo.
@@ -33,17 +33,28 @@ Every push to `main` redeploys; every PR gets its own preview URL.
 
 ```
 app/
-  layout.tsx        — root layout: fonts (next/font/google), page metadata
-  page.tsx           — the one route; renders <TreeEditorApp />
+  layout.tsx        — root layout: fonts (next/font/google), page metadata,
+                        and <Workspace>
+  page.tsx           — the builders' route (they render from the layout)
+  trees/page.tsx     — the saved-tree gallery
   globals.css        — all styling (light/dark aware via CSS custom properties)
 components/
+  Workspace.tsx      — keeps both builders mounted across routes; owns the
+                        save/open actions and the prompt dialog
   TreeEditorApp.tsx  — thin React wrapper: mounts TreeEditor against a ref
+  NavBar.tsx         — top bar: builder modes, My trees, theme toggle
+  DocumentBar.tsx    — the open tree's title and save status, New / Example / Save
+  TreeGallery.tsx    — the saved-tree gallery
 lib/tree-editor/
   editor.ts          — TreeEditor: a vanilla DOM controller, not a React
                         component — owns the editor's DOM directly (overlay
                         rendering, cursor/selection, folding, keystrokes)
   notation.ts         — pure parsing: tokenizer, tree parser, bracket scanner
   layout.ts           — tidy-tree layout: packs subtrees by their contours
+  tree-render.ts      — draws a parsed tree as SVG markup, with no editor needed
+  tree-store.ts       — saved trees: the TreeStore interface and its
+                        localStorage implementation
+  tree-session.ts     — links the editor to the saved tree it has open
   fold-map.ts         — coordinate mapping between the editor's folded view
                         and the tree's always-unfolded view
   types.ts            — shared TypeScript types
@@ -65,9 +76,15 @@ a chart, CodeMirror). If a feature needs React state/props later, add it as
 its own component alongside `TreeEditorApp`, not by converting the
 controller itself.
 
-## Possible future: a backend
+## Saved trees
 
-Everything today runs client-side (drafts persist to `localStorage` only).
-If this grows features that need a server — saving/sharing a tree by link,
-accounts, a tree library — add API routes under `app/api/`, Next's own
-convention for this. No migration needed; the framework's already in place.
+Trees are saved to `localStorage` for now, so they stay in one browser. The plan
+is to move them to Firebase (Auth + Firestore): implement `TreeStore` against
+Firestore and swap the `treeStore` export in `tree-store.ts`. Everything else
+already goes through that interface, which is async for this reason.
+
+The editor's draft is separate from saved trees. It is written on every change,
+so unsaved work survives a reload; saving copies it into the open tree.
+
+Other features that need a server (sharing a tree by link, say) can go in API
+routes under `app/api/`, Next's own convention for this.

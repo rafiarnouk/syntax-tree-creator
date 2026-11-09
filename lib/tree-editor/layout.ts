@@ -21,7 +21,7 @@ type Row = [number, number];
 
 let ctx: CanvasRenderingContext2D | null | undefined;
 
-function measurer(): (text: string) => number {
+export function measurer(): (text: string) => number {
   if (ctx === undefined) ctx = typeof document === "undefined" ? null : document.createElement("canvas").getContext("2d");
   const c = ctx;
   if (!c) return (text) => text.length * FONT_SIZE * 0.55;
