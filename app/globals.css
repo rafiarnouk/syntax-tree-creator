@@ -507,6 +507,13 @@ body {
 .search-field input::placeholder {
   color: var(--muted);
 }
+.sort-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
 .segmented {
   display: flex;
   gap: 2px;
@@ -590,15 +597,27 @@ body {
   margin: 6px 6px 0;
   padding: 20px 16px 16px;
   border-radius: 10px;
-  background-color: var(--surface-2);
-  background-image: radial-gradient(color-mix(in srgb, var(--border) 90%, var(--muted)) 1px, transparent 1.3px);
-  background-size: 14px 14px;
-  background-position: 7px 7px;
+  background: var(--surface-2);
 }
 .tree-card-svg {
-  width: 100%;
-  height: 100%;
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: visible;
   pointer-events: none;
+}
+/* Dot size and line thickness are set in lib/tree-editor/tree-outline.ts. */
+.outline-edge {
+  fill: none;
+  stroke: var(--ink);
+  stroke-linecap: round;
+}
+.outline-node {
+  fill: var(--ink);
+}
+.outline-word {
+  fill: var(--surface-2);
+  stroke: var(--ink);
 }
 .tree-card-empty {
   padding: 6px 12px;
@@ -623,15 +642,6 @@ body {
   font-size: 0.95rem;
   font-weight: 600;
   overflow-wrap: anywhere;
-}
-.tree-card-sentence {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-ibm-plex-serif), serif;
-  font-style: italic;
-  font-size: 0.85rem;
-  color: var(--muted);
 }
 .tree-card-meta {
   display: inline-flex;
@@ -820,13 +830,69 @@ body {
 }
 
 .workspace {
+  --split: 44.4%;
   display: grid;
-  grid-template-columns: minmax(320px, 1fr) minmax(360px, 1.25fr);
-  gap: 16px;
+  grid-template-columns: clamp(280px, var(--split), calc(100% - 321px)) 1px minmax(0, 1fr);
+  height: var(--panel-h);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.workspace > .panel {
+  min-width: 0;
+  height: auto;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+.split-divider {
+  position: relative;
+  z-index: 5;
+  background: var(--border);
+  cursor: col-resize;
+  touch-action: none;
+  transition: background-color 0.15s ease;
+}
+/* A wider, invisible grab area around the 1px line. */
+.split-divider::before {
+  content: "";
+  position: absolute;
+  inset: 0 -5px;
+}
+.split-divider::after {
+  content: "";
+  position: absolute;
+  inset: 0 -1px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.split-divider:hover::after,
+.split-divider:focus-visible::after,
+:root.resizing .split-divider::after {
+  opacity: 1;
+}
+.split-divider:focus-visible {
+  outline: none;
+}
+:root.resizing,
+:root.resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 @media (max-width: 760px) {
   .workspace {
     grid-template-columns: 1fr;
+    grid-template-rows: var(--panel-h) 1px var(--panel-h);
+    height: auto;
+  }
+  .split-divider {
+    pointer-events: none;
+  }
+  .split-divider::after {
+    display: none;
   }
 }
 

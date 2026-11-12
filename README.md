@@ -44,6 +44,7 @@ components/
   TreeEditorApp.tsx  — thin React wrapper: mounts TreeEditor against a ref
   NavBar.tsx         — top bar: builder modes, My trees, theme toggle
   DocumentBar.tsx    — the open tree's title and save status, New / Example / Save
+  SplitDivider.tsx   — the draggable line between the editor and the tree
   TreeGallery.tsx    — the saved-tree gallery
 lib/tree-editor/
   editor.ts          — TreeEditor: a vanilla DOM controller, not a React

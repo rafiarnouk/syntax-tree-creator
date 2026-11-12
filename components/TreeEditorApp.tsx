@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { TreeEditor } from "@/lib/tree-editor/editor";
 import DocumentBar from "@/components/DocumentBar";
+import SplitDivider from "@/components/SplitDivider";
 import { DownloadIcon, HighlighterIcon } from "@/components/icons";
 import { useWorkspace } from "@/components/Workspace";
 
@@ -15,6 +16,7 @@ import { useWorkspace } from "@/components/Workspace";
 export default function TreeEditorApp({ hidden, onReady }: { hidden?: boolean; onReady: (editor: TreeEditor) => void }) {
   const { save, session } = useWorkspace();
   const rootRef = useRef<HTMLDivElement>(null);
+  const workspaceRef = useRef<HTMLDivElement>(null);
   const mounted = useRef(false);
 
   useEffect(() => {
@@ -34,7 +36,7 @@ export default function TreeEditorApp({ hidden, onReady }: { hidden?: boolean; o
     <div className="app" ref={rootRef} hidden={hidden} onKeyDown={onKeyDown}>
       <DocumentBar />
 
-      <div className="workspace">
+      <div className="workspace" ref={workspaceRef}>
         <section className="panel">
           <div className="panel-head">
             <span className="label">Bracket notation</span>
@@ -66,6 +68,8 @@ export default function TreeEditorApp({ hidden, onReady }: { hidden?: boolean; o
             Line 1, Col 1
           </div>
         </section>
+
+        <SplitDivider container={workspaceRef} />
 
         <section className="panel">
           <div className="tree-area" id="treeArea" />

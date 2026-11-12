@@ -1,7 +1,7 @@
 // Draws a parsed tree as SVG markup. Has no ties to the editor, so anything
 // that only needs a picture of a tree can use it.
 
-import { collectWords, extractArrows, isLeaf, isTriangleNode, parseTree, scanBrackets, stripQuotes, tokenize } from "./notation";
+import { collectWords, extractArrows, isLeaf, isTriangleNode, stripQuotes } from "./notation";
 import type { MovementArrow } from "./notation";
 import { labelWidth, layout, LEVEL_H, measurer, NODE_GAP } from "./layout";
 import type { TreeNode } from "./types";
@@ -140,7 +140,7 @@ export function drawTree(parsed: TreeNode, { style = "simple", idPrefix = "n", t
     if (simple) {
       markup += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="var(--tree-line)" stroke-width="1"/>`;
     } else {
-      markup += `<path d="M ${x1} ${y1} C ${x1} ${y1 + 28}, ${x2} ${y2 - 22}, ${x2} ${y2}" fill="none" stroke="var(--depth-${l.depth % 5})" stroke-width="1.6" opacity=".75"/>`;
+      markup += `<path d="${curvedBranch(x1, y1, x2, y2)}" fill="none" stroke="var(--depth-${l.depth % 5})" stroke-width="1.6" opacity=".75"/>`;
     }
   }
   for (const t of triangles) {
@@ -165,11 +165,10 @@ export function drawTree(parsed: TreeNode, { style = "simple", idPrefix = "n", t
   return { markup, w, h, spans, nodeById, parentByNode, idsByNode, phraseCount, leafCount };
 }
 
-// Null when the text isn't a complete tree yet.
-export function drawSource(source: string, idPrefix?: string): TreeDrawing | null {
-  if (!source.trim() || !scanBrackets(source).balanced) return null;
-  const tree = parseTree(tokenize(source));
-  return tree ? drawTree(tree, { idPrefix }) : null;
+// A branch that leaves the parent heading straight down and eases into the child.
+export function curvedBranch(x1: number, y1: number, x2: number, y2: number): string {
+  const dy = y2 - y1;
+  return `M ${x1} ${y1} C ${x1} ${y1 + (dy * 28) / 30}, ${x2} ${y2 - (dy * 22) / 30}, ${x2} ${y2}`;
 }
 
 // Everything drawn, as segments: lines, triangle edges, and a line along the

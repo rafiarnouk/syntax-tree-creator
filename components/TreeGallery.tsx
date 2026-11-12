@@ -4,7 +4,7 @@ import { memo, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSessionState, useWorkspace } from "@/components/Workspace";
 import { ClockIcon, DownloadIcon, LogoIcon, PencilIcon, PlusIcon, SearchIcon, TrashIcon } from "@/components/icons";
-import { drawSource } from "@/lib/tree-editor/tree-render";
+import { drawOutline } from "@/lib/tree-editor/tree-outline";
 import { treeStore, type SavedTree } from "@/lib/tree-editor/tree-store";
 
 type SortKey = "updatedAt" | "createdAt";
@@ -33,10 +33,19 @@ function downloadTrees(trees: SavedTree[]): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-const TreePreview = memo(function TreePreview({ id, source }: { id: string; source: string }) {
-  const drawing = drawSource(source, `${id}-`);
-  if (!drawing) return <span className="tree-card-empty">Unfinished tree</span>;
-  return <svg className="tree-card-svg" viewBox={`0 0 ${drawing.w} ${drawing.h}`} aria-hidden="true" dangerouslySetInnerHTML={{ __html: drawing.markup }} />;
+const TreePreview = memo(function TreePreview({ source }: { source: string }) {
+  const outline = drawOutline(source);
+  if (!outline) return <span className="tree-card-empty">Unfinished tree</span>;
+  return (
+    <svg
+      className="tree-card-svg"
+      viewBox={`0 0 ${outline.w} ${outline.h}`}
+      width={outline.w}
+      height={outline.h}
+      aria-hidden="true"
+      dangerouslySetInnerHTML={{ __html: outline.markup }}
+    />
+  );
 });
 
 export default function TreeGallery() {
@@ -49,9 +58,8 @@ export default function TreeGallery() {
   const [sort, setSort] = useState<SortKey>("updatedAt");
 
   useEffect(() => {
-    // Previews measure text, so they wait for the web font.
-    Promise.all([treeStore.list(), document.fonts?.ready]).then(
-      ([list]) => setTrees(list),
+    treeStore.list().then(
+      (list) => setTrees(list),
       () => setFailed(true),
     );
   }, []);
@@ -144,12 +152,15 @@ export default function TreeGallery() {
                 onChange={(e) => setQuery(e.target.value)}
               />
             </label>
-            <div className="segmented" role="group" aria-label="Sort by">
-              {SORTS.map(({ key, label }) => (
-                <button key={key} type="button" aria-pressed={sort === key} onClick={() => setSort(key)}>
-                  {label}
-                </button>
-              ))}
+            <div className="sort-control">
+              <span id="sort-label">Sort by</span>
+              <div className="segmented" role="group" aria-labelledby="sort-label">
+                {SORTS.map(({ key, label }) => (
+                  <button key={key} type="button" aria-pressed={sort === key} onClick={() => setSort(key)}>
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           {shown.length === 0 ? (
@@ -169,11 +180,10 @@ export default function TreeGallery() {
                     }}
                   >
                     <span className="tree-card-preview">
-                      <TreePreview id={tree.id} source={tree.source} />
+                      <TreePreview source={tree.source} />
                     </span>
                     <span className="tree-card-body">
                       <span className="tree-card-title">{tree.title}</span>
-                      {tree.sentence.trim() && tree.sentence !== tree.title && <span className="tree-card-sentence">{tree.sentence}</span>}
                       <span className="tree-card-meta">
                         <ClockIcon size={12} />
                         {sort === "updatedAt" ? `Edited ${formatDate(tree.updatedAt)}` : `Created ${formatDate(tree.createdAt)}`}
